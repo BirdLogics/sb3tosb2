@@ -496,44 +496,47 @@ class Converter:
                         if opcode in self.staticFields:
                             value = value.lower()
                     elif arg[0] == "input":
-                        # Get the sb3 input argument
-                        value = block["inputs"][arg[1]]
+                        if arg[1] in block["inputs"]:
+                            # Get the sb3 input argument
+                            value = block["inputs"][arg[1]]
 
-                        # Parse the input
-                        value = value[1]
-                        if type(value) == list:
-                            if value[0] == 1:
-                                if value[1] == None:
-                                    value = False
+                            # Parse the input
+                            value = value[1]
+                            if type(value) == list:
+                                if value[0] == 1:
+                                    if value[1] == None:
+                                        value = False
+                                    else:
+                                        value = value[1]
+                                if value[0] == 9:
+                                    # Convert the hex color to decimal
+                                    value = int(value[1].strip("#"), 16)
+                                elif value[0] == 12:
+                                    # Get the variable
+                                    value = ["readVariable", value[1]]
+                                elif value[0] == 13:
+                                    # Get the list
+                                    value = ["contentsOfList:", value[1]]
                                 else:
                                     value = value[1]
-                            if value[0] == 9:
-                                # Convert the hex color to decimal
-                                value = int(value[1].strip("#"), 16)
-                            elif value[0] == 12:
-                                # Get the variable
-                                value = ["readVariable", value[1]]
-                            elif value[0] == 13:
-                                # Get the list
-                                value = ["contentsOfList:", value[1]]
-                            else:
-                                value = value[1]
-                        elif value in blocks:
-                            if blocks[value]["shadow"]:
-                                # It is probably a menu TODO Menu testing
-                                value = blocks[value]["fields"][arg[1]][0]
-                            else:
-                                if arg[1] in ["SUBSTACK", "SUBSTACK2"]:
-                                    self.blockCount += 1
-                                    value = self.parseScript(value, blocks)
+                            elif value in blocks:
+                                if blocks[value]["shadow"]:
+                                    # It is probably a menu TODO Menu testing
+                                    value = blocks[value]["fields"][arg[1]][0]
                                 else:
-                                    value = self.parseScript(value, blocks)
-                                    value = value[0] # TODO Always works?
-                        elif not arg[1] in ["SUBSTACK", "SUBSTACK2"] and value == None:
-                            # Blank value in bool input is null in sb3 but false in sb2
-                            value = False
+                                    if arg[1] in ["SUBSTACK", "SUBSTACK2"]:
+                                        self.blockCount += 1
+                                        value = self.parseScript(value, blocks)
+                                    else:
+                                        value = self.parseScript(value, blocks)
+                                        value = value[0] # TODO Always works?
+                            elif not arg[1] in ["SUBSTACK", "SUBSTACK2"] and value == None:
+                                # Blank value in bool input is null in sb3 but false in sb2
+                                value = False
+                            else:
+                                pass
                         else:
-                            pass
+                            value = None # Empty substacks not always stored?
                     else:
                         raise Exception("Invalid argmap")
 
