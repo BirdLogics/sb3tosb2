@@ -468,6 +468,10 @@ class Converter:
                     block2.append("backgroundIndex")
                 else:
                     block2.append("sceneName")
+            elif opcode == "data_deletealloflist":
+                block2.append("deleteLine:ofList:")
+                block2.append("all")
+                block2.append(block["fields"]["LIST"][0])
             elif opcode in self.specmap2:
                 # Get the sb2 block id
                 block2.append(self.specmap2[opcode][0])
