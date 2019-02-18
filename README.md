@@ -1,6 +1,13 @@
 # sb3tosb2
 Converter for sb3 files to sb2 files
 
+## File descriptions
+* SbC3.py - The main file, does the actual conversion
+* specmap.py - Creates a specmap file for the conversion
+* specmap2.json - Specmap file generated from the sb2 to sb3 specmap
+* sb2_project.sb2 - Test project created in sb2 format
+* sb3_project.sb3 - Test project converted to sb3 format
+
 ## Instructions
 1. Download SbC3.py and specmap2.json into the same folder.
 2. Put the .sb3 file in the same folder and name it 'project.sb3'
