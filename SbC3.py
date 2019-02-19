@@ -150,7 +150,11 @@ class Converter:
     staticFields = ["sensing_current", # Some fields are all caps for some reason with these
         "looks_changeeffectby", "looks_seteffectto"]
 
-    extensions = {"wedo2":{"extensionName": "LEGO WeDo 2.0"}}
+    extensions = { # Holds conversion data for extensions
+        "wedo2":{"extensionName": "LEGO WeDo 2.0"}
+    }
+
+    madeWS2 = False # TODO Signifies the project was originally made with s2
 
     def __init__(self, project, specmap2):
         """Sets the sb3 project and specmap for the convertor."""
@@ -183,7 +187,7 @@ class Converter:
                     "isPersistent": False,
                     "x": monitor["x"],
                     "y": monitor["y"],
-                    "width": monitor["width"],
+                    "width": monitor["width"], # TODO these aren't always correct?
                     "height": monitor["height"],
                     "visible": monitor["visible"]
                 }
@@ -231,30 +235,43 @@ class Converter:
         variables = []
         for id in target["variables"]:
             var = target["variables"][id]
+
             isCloud = False
             if len(var) == 3 and var[2]:
                 isCloud = True
+
+            value = var[1]
+            if value == "Infinity":
+                value = float("Inf")
+            elif value == "-Infinity":
+                value = float("-Inf")
+            
             variables.append({
                 "name": var[0],
-                "value": var[1],
+                "value": value,
                 "isPersistent": isCloud
                 })
             if id in self.monitors:
                 self.monitors[id]["target"] = target["name"]
         if variables:
             sprite["variables"] = variables
-        # TODO Variable monitors
 
         # Get lists
         lists = []
         for id in target["lists"]:
+            l = target["lists"][id]
+
+            for i in range(0, len(l[1])):
+                if l[1][i] == "Infinity":
+                    l[1][i] = float("Inf")
+                elif l[1][i] == "-Infinity":
+                    l[1][i] = float("-Inf")
+
             if id in self.monitors:
-                l = target["lists"][id]
                 #self.monitors[id]["listName"] = l[0]
                 self.monitors[id]["contents"] = l[1] # TODO Is this repeated?
                 lists.append(self.monitors[id])
             else:
-                l = target["lists"][id]
                 lists.append({
                     "listName": l[0],
                     "contents": l[1],
@@ -528,6 +545,16 @@ class Converter:
                                 if value[0] == 9:
                                     # Convert the hex color to decimal
                                     value = int(value[1].strip("#"), 16)
+                                elif value[0] == 10:
+                                    # If the project was made with s2, this would be a string unless hacked
+                                    if not self.madeWS2:
+                                        # Convert infinity strings to floats
+                                        if value[1] == "Infinity":
+                                            value = float("inf")
+                                        elif value[1] == "-Infinity":
+                                            value = float("-inf")
+                                        else:
+                                            value = value[1]
                                 elif value[0] == 12:
                                     # Get the variable
                                     value = ["readVariable", value[1]]
