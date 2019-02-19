@@ -527,7 +527,7 @@ class Converter:
                                 else:
                                     value = value[1]
                             elif value in blocks:
-                                if blocks[value]["shadow"]:
+                                if blocks[value]["shadow"] and arg[1] in blocks[value]["fields"]:
                                     # It is probably a menu TODO Menu testing
                                     value = blocks[value]["fields"][arg[1]][0]
                                 else:
