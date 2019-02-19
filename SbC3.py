@@ -150,6 +150,8 @@ class Converter:
     staticFields = ["sensing_current", # Some fields are all caps for some reason with these
         "looks_changeeffectby", "looks_seteffectto"]
 
+    extensions = {"wedo2":{"extensionName": "LEGO WeDo 2.0"}}
+
     def __init__(self, project, specmap2):
         """Sets the sb3 project and specmap for the convertor."""
         self.sb3 = project
@@ -200,7 +202,7 @@ class Converter:
         monitors = list(self.monitors.values())
         self.sb2["children"] = self.sprites + monitors
 
-        # Add info about this converter
+        # Add info about this converter and project
         self.sb2["info"] = {
                 "userAgent": "sb3 to sb2 imfh v0.0.3",
                 "flashVersion": "",
@@ -209,6 +211,14 @@ class Converter:
                 "spriteCount": len(self.sprites),
                 "swfVersion": ""
         }
+
+        # Add extension information
+        extensions = []
+        for e in self.sb3["extensions"]:
+            if e in self.extensions:
+                extensions.append(self.extensions[e])
+        if extensions:
+            self.sb2["info"]["savedExtensions"] = extensions
     
         return self.sb2, self.filemap
 
