@@ -268,9 +268,9 @@ class Converter:
                     l[1][i] = float("-Inf")
 
             if id in self.monitors:
-                #self.monitors[id]["listName"] = l[0]
+                self.monitors[id]["listName"] = l[0]
                 self.monitors[id]["contents"] = l[1] # TODO Is this repeated?
-                lists.append(self.monitors[id])
+                lists.append(dict(self.monitors[id])) # TODO Why are the contents being deleted?
             else:
                 lists.append({
                     "listName": l[0],
