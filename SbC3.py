@@ -3,9 +3,10 @@
 
 import argparse
 import json
+import logging
 import zipfile
 
-def main(sb3_path, sb2_path, specmap_path="./specmap2.json", overwrite=False, debug=False):
+def main(sb3_path, sb2_path, specmap_path="./specmap2.json", overwrite=False, debug=0):
     """Automatically converts a sb3 file and saves it in sb2 format.
     
     sb3_path -- the path to the .sb3 file
@@ -23,11 +24,11 @@ def main(sb3_path, sb2_path, specmap_path="./specmap2.json", overwrite=False, de
     # Make sure everything loaded correctly
     if sb3 and specmap2:
         # Convert the project
-        project = Converter(sb3, specmap2, debug)
+        project = Converter(sb3, specmap2, debug>0)
         sb2, filemap = project.convert()
 
         # Save the project
-        saveProject(sb2, filemap, sb2_path, sb3_path, overwrite, debug)
+        saveProject(sb2, filemap, sb2_path, sb3_path, overwrite, debug>1)
     else:
         print("Failed to load necessary files.")
 
@@ -154,13 +155,17 @@ class Converter:
         "wedo2":{"extensionName": "LEGO WeDo 2.0"}
     }
 
-    debug = False
+    debug = False # Whether to display error messages
+    log = None
 
     def __init__(self, project, specmap2, debug=False):
         """Sets the sb3 project and specmap for the convertor."""
         self.sb3 = project
         self.specmap2 = specmap2
-        self.debug = False
+
+        # Configure the log
+        self.log = logging.getLogger()
+        self.debug = debug
     
     def convert(self):
         """Convert the loaded sb3 project to sb2 format"""
@@ -192,8 +197,8 @@ class Converter:
                     "height": monitor["height"],
                     "visible": monitor["visible"]
                 }
-            else:
-                pass # TODO Monitors for sound volume, etc.
+            else: # TODO Monitors for sound volume, etc.
+                self.log.warning("Monitor '%s' not supported." %monitor["opcode"])
 
         # Parse each target(sprite)
         for target in self.sb3["targets"]:
@@ -401,6 +406,8 @@ class Converter:
             sprite["penLayerID"] = target["layerOrder"]
             sprite["tempoBPM"] = target["tempo"]
             sprite["videoAlpha"] = round((100 - target["videoTransparency"]) / 100, 2)
+        
+        self.log.info("Parsed sprite '%s'" %target["name"])
 
         return sprite
 
@@ -536,10 +543,8 @@ class Converter:
                                 # Get the sb3 input argument
                                 value = self.parseInput(block, arg[1], blocks)
                             except:
-                                if self.debug:
-                                    raise
-                                else: # TODO Log this
-                                    value = block["inputs"][arg[1]]
+                                self.log.error("Argument parsing problem.", exc_info=self.debug)
+                                value = block["inputs"][arg[1]]
                         else:
                             value = None # Empty substacks not always stored?
                     else:
@@ -603,7 +608,7 @@ class Converter:
                     if not inp in ["SUBSTACK", "SUBSTACK2"]:
                         value = False
                 else:
-                    pass # TODO Log this
+                    self.log.warning("Invalid block id: 's'" %value)
 
                 return value
 
@@ -622,7 +627,8 @@ class Converter:
             try:
                 value = int(value[1].strip("#"), 16)
             except ValueError:
-                value = value[1] # TODO Log this
+                self.log.warning("Unable to convert hex: '%s'" %value[1])
+                value = value[1]
         else:
             # Handle other values
             if value[0] == 10: # String value
@@ -634,7 +640,7 @@ class Converter:
             elif value[0] == 13: # List reporter
                 value = ["contentsOfList:", value[1]]
             else:
-                pass # TODO Log this
+                self.log.warning("Invalid value type: '%s'" %value[1])
             
             return value
         
@@ -666,6 +672,7 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--specmap", help="alternate to specmap_path")
     parser.add_argument("-o", "--overwrite", help="overwrite existing files at the sb2 destination", action="store_true")
     parser.add_argument("-d", "--debug", help="save a debug json to './project.json' if overwrite is enabled", action="store_true")
+    parser.add_argument("-v", "--verbosity", help="controls printed verbosity", action="count", default=0)
     args = parser.parse_args()
     
     # A bit more parsing
@@ -679,6 +686,24 @@ if __name__ == "__main__":
     specmap_path = args.specmap
     overwrite = args.overwrite
     debug = args.debug
+    verbosity = args.verbosity
+
+    # Get the debug level
+    if debug:
+        debug = 2
+    elif verbosity >= 1:
+        debug = 1
+
+    # Get the verbosity level
+    if verbosity == 0:
+        verbosity = 30
+    elif verbosity == 1:
+        verbosity = 20
+    elif verbosity >= 2:
+        verbosity = 10
+
+    # Configure the logger
+    logging.basicConfig(format="%(levelname)s: %(message)s", level=verbosity)
 
     # Run the converter with these arguments
     main(sb3_path, sb2_path, specmap_path, overwrite, debug)
