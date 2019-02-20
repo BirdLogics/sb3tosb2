@@ -23,7 +23,7 @@ def main(sb3_path, sb2_path, specmap_path="./specmap2.json", overwrite=False, de
     # Make sure everything loaded correctly
     if sb3 and specmap2:
         # Convert the project
-        project = Converter(sb3, specmap2)
+        project = Converter(sb3, specmap2, debug)
         sb2, filemap = project.convert()
 
         # Save the project
@@ -154,12 +154,13 @@ class Converter:
         "wedo2":{"extensionName": "LEGO WeDo 2.0"}
     }
 
-    madeWS2 = False # TODO Signifies the project was originally made with s2
+    debug = False
 
-    def __init__(self, project, specmap2):
+    def __init__(self, project, specmap2, debug=False):
         """Sets the sb3 project and specmap for the convertor."""
         self.sb3 = project
         self.specmap2 = specmap2
+        self.debug = False
     
     def convert(self):
         """Convert the loaded sb3 project to sb2 format"""
@@ -531,54 +532,14 @@ class Converter:
                             value = value.lower()
                     elif arg[0] == "input":
                         if arg[1] in block["inputs"]:
-                            # Get the sb3 input argument
-                            value = block["inputs"][arg[1]]
-
-                            # Parse the input
-                            value = value[1]
-                            if type(value) == list:
-                                if value[0] == 1:
-                                    if value[1] == None:
-                                        value = False
-                                    else:
-                                        value = value[1]
-                                if value[0] == 9:
-                                    # Convert the hex color to decimal
-                                    value = int(value[1].strip("#"), 16)
-                                elif value[0] == 10:
-                                    # If the project was made with s2, this would be a string unless hacked
-                                    if not self.madeWS2:
-                                        # Convert infinity strings to floats
-                                        if value[1] == "Infinity":
-                                            value = float("inf")
-                                        elif value[1] == "-Infinity":
-                                            value = float("-inf")
-                                        else:
-                                            value = value[1]
-                                elif value[0] == 12:
-                                    # Get the variable
-                                    value = ["readVariable", value[1]]
-                                elif value[0] == 13:
-                                    # Get the list
-                                    value = ["contentsOfList:", value[1]]
-                                else:
-                                    value = value[1]
-                            elif value in blocks:
-                                if blocks[value]["shadow"] and arg[1] in blocks[value]["fields"]:
-                                    # It is probably a menu TODO Menu testing
-                                    value = blocks[value]["fields"][arg[1]][0]
-                                else:
-                                    if arg[1] in ["SUBSTACK", "SUBSTACK2"]:
-                                        self.blockCount += 1
-                                        value = self.parseScript(value, blocks)
-                                    else:
-                                        value = self.parseScript(value, blocks)
-                                        value = value[0] # TODO Always works?
-                            elif not arg[1] in ["SUBSTACK", "SUBSTACK2"] and value == None:
-                                # Blank value in bool input is null in sb3 but false in sb2
-                                value = False
-                            else:
-                                pass
+                            try:
+                                # Get the sb3 input argument
+                                value = self.parseInput(block, arg[1], blocks)
+                            except:
+                                if self.debug:
+                                    raise
+                                else: # TODO Log this
+                                    value = block["inputs"][arg[1]]
                         else:
                             value = None # Empty substacks not always stored?
                     else:
@@ -604,6 +565,96 @@ class Converter:
             script = blocks2
 
         return script
+
+    def parseInput(self, block, inp, blocks):
+        # Get the input from the block
+        value = block["inputs"][inp]
+
+        # Handle possible block input
+        if value[0] == 1:
+            # Wrapper; block or value
+            if type(value[1]) == list:
+                value = value[1]
+            else:
+                value = [2, value[1]]
+        elif value[0] == 3:
+            # Block with value hidden
+            value = [2, value[1]]
+
+        if value[0] == 2:
+            # Block
+            value = value[1]
+
+            if type(value) == list:
+                pass # It's probably a variable
+            else:
+                if value in blocks:
+                    if blocks[value]["shadow"] and inp in blocks[value]["fields"]:
+                        # It's probably be a menu
+                        value = blocks[value]["fields"][inp][0]
+                    elif inp in ["SUBSTACK", "SUBSTACK2"]:
+                        self.blockCount += 1
+                        value = self.parseScript(value, blocks)
+                    else:
+                        value = self.parseScript(value, blocks)
+                        value = value[0] # TODO Always works?
+                elif value == None:
+                    # Blank value in bool input is null in sb3 but false in sb2
+                    if not inp in ["SUBSTACK", "SUBSTACK2"]:
+                        value = False
+                else:
+                    pass # TODO Log this
+
+                return value
+
+        # Handle number values
+        if value[0] == 4: # Float value
+            value = value[1]
+        elif value[0] == 5: # UFloat value
+            value = value[1]
+        elif value[0] == 6: # UInteger value
+            value = value[1]
+        elif value[0] == 7: # Integer value
+            value = value[1]
+        elif value[0] == 8: # Float angle value
+            value = value[1]
+        elif value[0] == 9: # Hex color value
+            try:
+                value = int(value[1].strip("#"), 16)
+            except ValueError:
+                value = value[1] # TODO Log this
+        else:
+            # Handle other values
+            if value[0] == 10: # String value
+                value = value[1]
+            elif value[0] == 11: # Broadcast value
+                value = value[1]
+            elif value[0] == 12: # Variable reporter
+                value = ["readVariable", value[1]]
+            elif value[0] == 13: # List reporter
+                value = ["contentsOfList:", value[1]]
+            else:
+                pass # TODO Log this
+            
+            return value
+        
+        # It's a number, check special cases
+        if value == "Infinity":
+            value = float("inf")
+        elif value == "-Infinity":
+            value = float("-inf")
+        elif value == "NaN":
+            value = float("nan")
+        else:
+            # Convert strings to numbers
+            try:
+                value = float(value)
+                if value == int(value):
+                    value = int(value)
+            except ValueError:
+                pass # Can happen with item all of list
+        
+        return value
 
 # Run the program if not imported as a module
 if __name__ == "__main__":
