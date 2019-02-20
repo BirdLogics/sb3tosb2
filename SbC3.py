@@ -446,9 +446,9 @@ class Converter:
                 block2.append(value["proccode"])
                 block2.append(json.loads(value["argumentnames"]))
                 block2.append(json.loads(value["argumentdefaults"]))
-                if value["warp"] == "true":
+                if value["warp"] == "true" or value["warp"] == True:
                     block2.append(True)
-                else:
+                elif value["warp"] == "false" or value["warp"] == False:
                     block2.append(False)
             elif opcode == "procedures_call":
                 # Handle custom block call
