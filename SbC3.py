@@ -1,5 +1,5 @@
 # Sb3 to Sb2 Converter 
-# Version 0.1.1
+# Version 0.2.0
 
 import argparse
 import json
@@ -141,19 +141,24 @@ class Converter:
 
     rotationStyles = {"all around": "normal", "left-right":"leftRight", 
                     "don't rotate": "none"} # A key for sb3 rotation styles to sb2
+    
+    # TODO Make space adjustable based on version made in
+    spaceX = 1.5 # Size adjustment factor
+    spaceY = 2.2 # Works best for projects spaced in 2.0
 
     sprites = [] # Holds the children of the stage
     monitors = {} # Holds monitors and their positions
 
-    blocks = {} # Holds blockIds for connecting comments
-    blockCount = 0 # Count for comments
+    blockIds = [] # Holds blockIds for anchoring comments
 
-    staticFields = ["sensing_current", # Some fields are all caps for some reason with these
+    staticFields = ["sensing_current", # Some fields are all caps for some reason
         "looks_changeeffectby", "looks_seteffectto"]
 
     extensions = { # Holds conversion data for extensions
         "wedo2":{"extensionName": "LEGO WeDo 2.0"}
     }
+
+    monitorModes = {"default": 1, "large": 2, "slider": 3}
 
     debug = False # Whether to display error messages
     log = None
@@ -172,16 +177,20 @@ class Converter:
         # Get the monitors for use with lists
         for monitor in self.sb3["monitors"]:
             if monitor["opcode"] == "data_variable":
+                if monitor["spriteName"]:
+                    label = monitor["spriteName"] + ": " + monitor["params"]["VARIABLE"]
+                else:
+                    label = monitor["params"]["VARIABLE"]
                 self.monitors[monitor["id"]] = {
-                    "target": "",
+                    "target": monitor["spriteName"] or "Stage",
                     "cmd": "getVar:",
                     "param": monitor["params"]["VARIABLE"],
                     "color": 15629590,
-                    "label": "",
-                    "mode": 1, # TODO Monitor modes
-                    #"sliderMin": monitor["min"],
-                    #"sliderMax": monitor["max"],
-                    "isDiscrete": True, # TODO Is this in 3.0? (Only ints)
+                    "label": label,
+                    "mode": self.monitorModes[monitor["mode"]],
+                    "sliderMin": ("min" in monitor and monitor["min"] or 0),
+                    "sliderMax": ("max" in monitor and monitor["max"] or 100),
+                    "isDiscrete": True,
                     "x": monitor["x"],
                     "y": monitor["y"],
                     "visible": monitor["visible"]
@@ -189,11 +198,11 @@ class Converter:
             elif monitor["opcode"] == "data_listcontents":
               self.monitors[monitor["id"]] = {
                     "listName": monitor["params"]["LIST"],
-                    "contents": [],
+                    "contents": ("value" in monitor and monitor["value"] or []),
                     "isPersistent": False,
                     "x": monitor["x"],
                     "y": monitor["y"],
-                    "width": monitor["width"], # TODO these aren't always correct?
+                    "width": monitor["width"],
                     "height": monitor["height"],
                     "visible": monitor["visible"]
                 }
@@ -242,23 +251,24 @@ class Converter:
         for id in target["variables"]:
             var = target["variables"][id]
 
-            isCloud = False
             if len(var) == 3 and var[2]:
                 isCloud = True
+            else:
+                isCloud = False
 
             value = var[1]
             if value == "Infinity":
                 value = float("Inf")
             elif value == "-Infinity":
                 value = float("-Inf")
+            elif value == "NaN":
+                value = float("NaN")
             
             variables.append({
                 "name": var[0],
                 "value": value,
                 "isPersistent": isCloud
-                })
-            if id in self.monitors:
-                self.monitors[id]["target"] = target["name"]
+            })
         if variables:
             sprite["variables"] = variables
 
@@ -267,35 +277,36 @@ class Converter:
         for id in target["lists"]:
             l = target["lists"][id]
 
+            # Get the monitor related to this list
+            if id in self.monitors:
+                monitor = self.monitors[id]
+            else:
+                monitor = None
+
+            # Convert special values
             for i in range(0, len(l[1])):
                 if l[1][i] == "Infinity":
                     l[1][i] = float("Inf")
                 elif l[1][i] == "-Infinity":
                     l[1][i] = float("-Inf")
+                elif l[1][i] == "NaN":
+                    l[1][i] = float("NaN")
 
-            if id in self.monitors:
-                self.monitors[id]["listName"] = l[0]
-                self.monitors[id]["contents"] = l[1] # TODO Is this repeated?
-                lists.append(dict(self.monitors[id])) # TODO Why are the contents being deleted?
-            else:
-                lists.append({
-                    "listName": l[0],
-                    "contents": l[1],
-                    "isPersistent": False,
-                    "x": 5,
-                    "y": 5,
-                    "width": 105,
-                    "height": 179,
-                    "visible": False
-                })
+            lists.append({
+                "listName": l[0],
+                "contents": l[1],
+                "isPersistent": False,
+                "x": monitor and monitor["x"] or 5,
+                "y": monitor and monitor["y"] or 5,
+                "width": monitor and monitor["width"] or 104,
+                "height": monitor and monitor["height"] or 204,
+                "visible": monitor and monitor["visible"] or False
+            })
         if lists:
             sprite["lists"] = lists
 
-        # Reset the blockId list
-        self.blocks = {}
-        self.blockCount = 0
-
         # Get scripts
+        self.blockIds = [] # Holds blocks for comment anchoring
         scripts = []
         for id in target["blocks"]:
             block = target["blocks"][id]
@@ -304,19 +315,20 @@ class Converter:
                     script = self.parseScript(id, target["blocks"])
                     scripts.append(script)
             elif type(block) == list:
-                script = []
-                script.append(round(block[3] / 1.5))
-                script.append(round(block[4] / 2.2))
-                script.append([])
+                # Handle reporter values not in a block
+                script = [
+                    round(block[3] / self.spaceX),
+                    round(block[4] / self.spaceY),
+                    []
+                ]
 
-                # Handle reporters not in a block
-                if block[0] == 12:
-                    # Get the variable
+                if block[0] == 12: # Variable reporter
                     script[2].append(["readVariable", block[1]])
-                elif block[0] == 13:
-                    # Get the list
+                elif block[0] == 13: # List reporter
                     script[2].append(["contentsOfList:", block[1]])
+                
                 scripts.append(script)
+                self.blockIds.append(id)
                 
         if scripts:
             sprite["scripts"] = scripts
@@ -325,19 +337,19 @@ class Converter:
         comments = []
         for id in target["comments"]:
             comment = target["comments"][id]
-            #if comment["blockId"] in self.blocks:
-                #blockIndex = self.blocks[comment["blockId"]
-            #else:
-            blockIndex = -1 # TODO Connected comments
+            if comment["blockId"] in self.blockIds:
+                blockIndex = self.blockIds.index(comment["blockId"])
+            else:
+                blockIndex = -1
             if comment["x"] == None:
                 comment["x"] = 0
             if comment["y"] == None:
                 comment["y"] = 0
             comments.append([
-                round(comment["x"] / 1.5),
-                round(comment["y"] / 2.2),
-                round(comment["width"] / 1.5),
-                round(comment["height"] / 2.2),
+                round(comment["x"] / self.spaceX),
+                round(comment["y"] / self.spaceY),
+                round(comment["width"] / self.spaceX),
+                round(comment["height"] / self.spaceY),
                 not comment["minimized"],
                 blockIndex,
                 comment["text"]
@@ -421,23 +433,24 @@ class Converter:
         blocks2 = []
 
         # The current block being parsed
-        block = blocks[id]
-
-        # A list of blocks for connected comments
-        blockIds = []
+        block = id
 
         # Check if the block is top level
-        if block["topLevel"]:
+        if blocks[id]["topLevel"]:
             # Get the position of the script
-            script.append(round(block["x"] / 1.5))
-            script.append(round(block["y"] / 2.2))
+            script.append(round(blocks[id]["x"] / self.spaceX))
+            script.append(round(blocks[id]["y"] / self.spaceY))
             topLevel = True
-            self.blocks[id] = self.blockCount
-            self.blockCount += 1
         else:
             topLevel = False
 
         while block:
+            # Save the id for comment anchoring
+            self.blockIds.append(block)
+
+            # Get the sb3 block
+            block = blocks[block]
+
             # Holds the parsed block
             block2 = []
 
@@ -557,10 +570,7 @@ class Converter:
             blocks2.append(block2)
 
             # Get the next block
-            if block["next"]:
-                block = blocks[block["next"]]
-            else:
-                block = False
+            block = block["next"]
 
         if topLevel:
             # Add the blocks to the script
@@ -576,29 +586,22 @@ class Converter:
         value = block["inputs"][inp]
 
         # Handle possible block input
-        if value[0] == 1:
-            # Wrapper; block or value
+        if value[0] == 1: # Wrapper; block or value
             if type(value[1]) == list:
                 value = value[1]
             else:
                 value = [2, value[1]]
-        elif value[0] == 3:
-            # Block with value hidden
+        elif value[0] == 3: # Block covering a value
             value = [2, value[1]]
-
-        if value[0] == 2:
-            # Block
+        if value[0] == 2: # Block
             value = value[1]
 
-            if type(value) == list:
-                pass # It's probably a variable
-            else:
+            if type(value) != list: # Make sure it's not a variable
                 if value in blocks:
                     if blocks[value]["shadow"] and inp in blocks[value]["fields"]:
                         # It's probably be a menu
                         value = blocks[value]["fields"][inp][0]
                     elif inp in ["SUBSTACK", "SUBSTACK2"]:
-                        self.blockCount += 1
                         value = self.parseScript(value, blocks)
                     else:
                         value = self.parseScript(value, blocks)
@@ -636,12 +639,14 @@ class Converter:
             elif value[0] == 11: # Broadcast value
                 value = value[1]
             elif value[0] == 12: # Variable reporter
+                self.blockIds.append(None) # TODO Calculate variable block id
                 value = ["readVariable", value[1]]
             elif value[0] == 13: # List reporter
+                self.blockIds.append(None)
                 value = ["contentsOfList:", value[1]]
             else:
                 self.log.warning("Invalid value type: '%s'" %value[1])
-            
+
             return value
         
         # It's a number, check special cases
@@ -659,7 +664,7 @@ class Converter:
                     value = int(value)
             except ValueError:
                 pass # Can happen with item all of list
-        
+
         return value
 
 # Run the program if not imported as a module
