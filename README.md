@@ -17,7 +17,6 @@ Converter for sb3 files to sb2 files
 For more advanced usage, such as with different file names, run 'python SbC.py -h'.
 
 ## Limitations
-- Some monitors are not yet supported
 - Comments may be incorrectly attached in hacked projects
 - Maximum depth of 1000 embeded blocks due to usage of python recursion
 - Sound rate and samples are corrupted resulting in a higher pitch
