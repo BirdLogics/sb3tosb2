@@ -160,6 +160,25 @@ class Converter:
 
     monitorModes = {"default": 1, "large": 2, "slider": 3}
 
+    monitorOpcodes = {
+        "sensing_answer": "answer",
+        "motion_direction": "heading",
+        "looks_size": "scale",
+        "sensing_loudness": "soundLevel",
+        "music_getTempo": "tempo", 
+        "sensing_current": "timeAndDate",
+        "sensing_timer": "timer",
+        "sound_volume": "volume",
+        "motion_xposition": "xpos", 
+        "motion_yposition": "ypos"
+    }
+
+    monitorColors = {
+        "motion": 4877524, "looks": 9065943,
+        "sound": 12272323, "music": 12272323,
+        "data": 15629590, "sensing": 2926050
+    }
+
     debug = False # Whether to display error messages
     log = None
 
@@ -176,27 +195,14 @@ class Converter:
         """Convert the loaded sb3 project to sb2 format"""
         # Get the monitors for use with lists
         for monitor in self.sb3["monitors"]:
+            cmd = ""
+            param = ""
             if monitor["opcode"] == "data_variable":
-                if monitor["spriteName"]:
-                    label = monitor["spriteName"] + ": " + monitor["params"]["VARIABLE"]
-                else:
-                    label = monitor["params"]["VARIABLE"]
-                self.monitors[monitor["id"]] = {
-                    "target": monitor["spriteName"] or "Stage",
-                    "cmd": "getVar:",
-                    "param": monitor["params"]["VARIABLE"],
-                    "color": 15629590,
-                    "label": label,
-                    "mode": self.monitorModes[monitor["mode"]],
-                    "sliderMin": ("min" in monitor and monitor["min"] or 0),
-                    "sliderMax": ("max" in monitor and monitor["max"] or 100),
-                    "isDiscrete": True,
-                    "x": monitor["x"],
-                    "y": monitor["y"],
-                    "visible": monitor["visible"]
-                }
+                cmd = "getVar:"
+                param = monitor["params"]["VARIABLE"]
+                color = self.monitorColors["data"]
             elif monitor["opcode"] == "data_listcontents":
-              self.monitors[monitor["id"]] = {
+                self.monitors[monitor["id"]] = {
                     "listName": monitor["params"]["LIST"],
                     "contents": ("value" in monitor and monitor["value"] or []),
                     "isPersistent": False,
@@ -206,8 +212,47 @@ class Converter:
                     "height": monitor["height"],
                     "visible": monitor["visible"]
                 }
-            else: # TODO Monitors for sound volume, etc.
-                self.log.warning("Monitor '%s' not supported." %monitor["opcode"])
+            elif monitor["opcode"] == "looks_costumenumbername":
+                if monitor["params"]["NUMBER_NAME"] == "number":
+                    cmd = "costumeIndex"
+                    color = self.monitorColors["looks"]
+                elif monitor["params"]["NUMBER_NAME"] == "name":
+                    self.log.warning("Monitor costume name not supported.")
+            elif monitor["opcode"] == "looks_backdropnumbername":
+                if monitor["params"]["NUMBER_NAME"] == "number":
+                    cmd = "backgroundIndex"
+                elif monitor["params"]["NUMBER_NAME"] == "name":
+                    cmd = "sceneName"
+                color = self.monitorColors["looks"]
+            elif monitor["opcode"] == "sensing_current":
+                cmd = "timeAndDate"
+                param = monitor["params"]["CURRENTMENU"].lower()
+                color = self.monitorColors["sensing"]
+            elif monitor["opcode"] in self.monitorOpcodes:
+                cmd = self.monitorOpcodes[monitor["opcode"]]
+                color = self.monitorColors[monitor["opcode"].split("_")[0]]
+            else:
+                self.log.warning("Unkown monitor '%s'" % monitor["opcode"])
+
+            if cmd:
+                if monitor["spriteName"]:
+                    label = monitor["spriteName"] + ": " + param
+                else:
+                    label = param
+                self.monitors[monitor["id"]] = {
+                    "target": monitor["spriteName"] or "Stage",
+                    "cmd": cmd,
+                    "param": param or None,
+                    "color": color,
+                    "label": label,
+                    "mode": self.monitorModes[monitor["mode"]],
+                    "sliderMin": ("min" in monitor and monitor["min"] or 0),
+                    "sliderMax": ("max" in monitor and monitor["max"] or 100),
+                    "isDiscrete": True,
+                    "x": monitor["x"],
+                    "y": monitor["y"],
+                    "visible": monitor["visible"]
+                }
 
         # Parse each target(sprite)
         for target in self.sb3["targets"]:
@@ -223,7 +268,7 @@ class Converter:
 
         # Add info about this converter and project
         self.sb2["info"] = {
-                "userAgent": "sb3 to sb2 imfh v0.0.3",
+                "userAgent": "sb3tosb2 imfh",
                 "flashVersion": "",
                 "scriptCount": 0, # TODO Script count
                 "videoOn": False,
