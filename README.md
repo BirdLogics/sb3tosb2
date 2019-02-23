@@ -14,17 +14,12 @@ Converter for sb3 files to sb2 files
 3. Run SbC3.py with Python 3. It is possible that it will work with Python 2.
 4. It will save to 'project.sb2' provided there is not already a file in that location. 
 
-For more advanced usage, such as with diffrent file names, run 'python SbC.py -h'.
+For more advanced usage, such as with different file names, run 'python SbC.py -h'.
 
 ## Limitations
-- Limited and buggy support for monitors
-- Limited and possibly buggy support for comments
+- Some monitors are not yet supported
+- Comments may be incorrectly attached in hacked projects
 - Maximum depth of 1000 embeded blocks due to usage of python recursion
-- Sound rate and samples is corrupted resulting in a higher pitch
-- Work in progress, as such may be buggy
-
-## TODO
-- [ ] Finish monitor support
-- [ ] Finish comment support
-- [ ] Find and fix any bugs
-- [ ] Cleanup code
+- Sound rate and samples are corrupted resulting in a higher pitch
+- SVG(Vector mode) text may be lost
+- Work in progress; may be buggy
