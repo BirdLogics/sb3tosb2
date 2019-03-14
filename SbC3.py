@@ -471,56 +471,67 @@ class Converter:
     def parseScript(self, id, blocks):
         """Converts a sb3 script to a sb2 script."""
 
-        # Holds the parsed script
+        # The parsed script to be returned
         script = []
+        
+        # Holds the sb2 block being parsed
+        current = []
+        
+        # Holds the list which parsed blocks are added to
+        chain = []
+        
+        # Initialize the queue
+        self.queue = [[id, chain, True]]
 
-        # The parsed blocks
-        blocks2 = []
+        # Get the position of the script
+        script.append(round(blocks[id]["x"] / self.spaceX))
+        script.append(round(blocks[id]["y"] / self.spaceY))
+        
+        # Add the chain to the script
+        script.append(chain)
 
-        # The current block being parsed
-        block = id
+        while self.queue:
+            # Get the next block to be parsed
+            next = self.queue.pop(0)
+            blockId = next[0]
+            if next[2]:
+                # It's a stack
+                current = []
+                chain = next[1]
+            else:
+                # It's just a block
+                current = next[1]
+                chain = False
 
-        # Check if the block is top level
-        if blocks[id]["topLevel"]:
-            # Get the position of the script
-            script.append(round(blocks[id]["x"] / self.spaceX))
-            script.append(round(blocks[id]["y"] / self.spaceY))
-            topLevel = True
-        else:
-            topLevel = False
 
-        while block:
             # Save the id for comment anchoring
-            self.blockIds.append(block)
+            self.blockIds.append(blockId)
 
             # Get the sb3 block
-            block = blocks[block]
-
-            # Holds the parsed block
-            block2 = []
+            block3 = blocks[blockId]
 
             # Get the 3.0 opcode
-            opcode = block["opcode"]
+            opcode = block3["opcode"]
 
             # Get the specmap for the block, handle custom blocks
             argmap = None
             if opcode == "procedures_definition":
                 # Handle custom block definition
-                value = block["inputs"]["custom_block"][1]
+                value = block3["inputs"]["custom_block"][1]
                 value = blocks[value]["mutation"]
-                block2.append("procDef")
-                block2.append(value["proccode"])
-                block2.append(json.loads(value["argumentnames"]))
-                block2.append(json.loads(value["argumentdefaults"]))
+                current.append("procDef")
+                current.append(value["proccode"])
+                current.append(json.loads(value["argumentnames"]))
+                current.append(json.loads(value["argumentdefaults"]))
                 if value["warp"] == "true" or value["warp"] == True:
-                    block2.append(True)
+                    current.append(True)
                 elif value["warp"] == "false" or value["warp"] == False:
-                    block2.append(False)
+                    current.append(False)
             elif opcode == "procedures_call":
                 # Handle custom block call
-                value = block["mutation"]
-                block2.append("call")
-                block2.append(value["proccode"])
+                value = block3["mutation"]
+                current.append("call")
+                current.append(value["proccode"])
 
                 # Create a custom argument map
                 argmap = []
@@ -528,103 +539,100 @@ class Converter:
                     argmap.append(["input",arg])
             elif opcode == "argument_reporter_string_number":
                 # Handle custom block string/number reporter
-                block2.append("getParam")
-                block2.append(block["fields"]["VALUE"][0])
-                block2.append("r")
+                current.append("getParam")
+                current.append(block3["fields"]["VALUE"][0])
+                current.append("r")
             elif opcode == "argument_reporter_boolean":
                 # Handle custom block boolean reporter
-                block2.append("getParam")
-                block2.append(block["fields"]["VALUE"][0])
-                block2.append("b")
+                current.append("getParam")
+                current.append(block3["fields"]["VALUE"][0])
+                current.append("b")
             # Handle some sb3 exclusive workarounds
             elif opcode == "looks_gotofrontback":
                 # Handle the new front/back argument
-                if block["fields"]["FRONT_BACK"][0] == "back":
-                    block2.append("goBackByLayers:")
-                    block2.append(999)
+                if block3["fields"]["FRONT_BACK"][0] == "back":
+                    current.append("goBackByLayers:")
+                    current.append(999)
                 else:
-                    block2.append("comeToFront")
+                    current.append("comeToFront")
             elif opcode == "looks_goforwardbackwardlayers":
                 # Handle the new fowards/back argument
-                block2.append("goBackByLayers:")
+                current.append("goBackByLayers:")
                 try:
-                    if block["fields"]["FORWARD_BACKWARD"][0] == "foward":
-                        block2.append(int(block["inputs"]["NUM"][1][1]) * -1)
+                    if block3["fields"]["FORWARD_BACKWARD"][0] == "foward":
+                        current.append(int(block3["inputs"]["NUM"][1][1]) * -1)
                     else:
-                        block2.append(block["inputs"]["NUM"][1][1])
+                        current.append(block3["inputs"]["NUM"][1][1])
                 except:
-                    block2.append(block["inputs"]["NUM"][1][1])
+                    current.append(block3["inputs"]["NUM"][1][1])
             elif opcode == "looks_costumenumbername":
-                if block["fields"]["NUMBER_NAME"][0] == "name":
-                    block2.append("costumeName") # Undefined block
+                if block3["fields"]["NUMBER_NAME"][0] == "name":
+                    current.append("costumeName") # Undefined block
                 else:
-                    block2.append("costumeIndex")
+                    current.append("costumeIndex")
             elif opcode == "looks_backdropnumbername":
-                if block["fields"]["NUMBER_NAME"][0] == "number":
-                    block2.append("backgroundIndex")
+                if block3["fields"]["NUMBER_NAME"][0] == "number":
+                    current.append("backgroundIndex")
                 else:
-                    block2.append("sceneName")
+                    current.append("sceneName")
             elif opcode == "data_deletealloflist":
-                block2.append("deleteLine:ofList:")
-                block2.append("all")
-                block2.append(block["fields"]["LIST"][0])
+                current.append("deleteLine:ofList:")
+                current.append("all")
+                current.append(block3["fields"]["LIST"][0])
             elif opcode in self.specmap2:
                 # Get the sb2 block id
-                block2.append(self.specmap2[opcode][0])
+                current.append(self.specmap2[opcode][0])
 
                 # Get the block's argmap
                 argmap = self.specmap2[opcode][1]
             else:
                 # It's probably a Scratch 3 block that this can't convert
-                block2.append(opcode)
+                current.append(opcode)
 
                 # Make a custom argmap for it
                 argmap = []
-                for field in block["fields"]:
+                for field in block3["fields"]:
                     argmap.append(["field",field])
-                for input in block["inputs"]:
+                for input in block3["inputs"]:
                     argmap.append(["input",input])
 
             if argmap != None:
-                # Loop through each parameter and parse it
+                # Arguments in the queue counter
+                self.q = 0
+
+                # Parse each parameter
                 for arg in argmap:
                     if arg[0] == "field":
                         # Get the sb3 field argument
-                        value = block["fields"][arg[1]][0]
+                        value = block3["fields"][arg[1]][0]
 
                         # Some fields are all caps for some reason
                         if opcode in self.staticFields:
                             value = value.lower()
                     elif arg[0] == "input":
-                        if arg[1] in block["inputs"]:
+                        if arg[1] in block3["inputs"]:
                             try:
                                 # Get the sb3 input argument
-                                value = self.parseInput(block, arg[1], blocks)
+                                value = self.parseInput(block3, arg[1], blocks)
                             except:
-                                self.log.error("Argument parsing problem.", exc_info=self.debug)
-                                value = block["inputs"][arg[1]]
+                                self.log.error("Argument parsing problem.", exc_info=True)
+                                value = block3["inputs"][arg[1]]
                         else:
                             value = None # Empty substacks not always stored?
-                    else:
-                        raise Exception("Invalid argmap")
 
                     # Add the parsed parameter to the block
-                    block2.append(value)
-
+                    current.append(value)
+            
             # Add the block to the script
-            blocks2.append(block2)
-
-            # Get the next block
-            block = block["next"]
-
-        if topLevel:
-            # Add the blocks to the script
-            script.append(blocks2)
-        else:
-            # This was called recursively
-            script = blocks2
-
+            if chain != False:
+                chain.append(current)
+            
+            # Add the next block to the queue
+            if block3["next"]:
+                self.queue.append([block3["next"], chain, True])
+        
         return script
+
 
     def parseInput(self, block, inp, blocks):
         # Get the input from the block
@@ -643,18 +651,24 @@ class Converter:
 
             if type(value) != list: # Make sure it's not a variable
                 if value in blocks:
-                    if blocks[value]["shadow"] and inp in blocks[value]["fields"]:
+                    id = value
+                    if blocks[id]["shadow"] and inp in blocks[id]["fields"]:
                         # It's probably be a menu
-                        value = blocks[value]["fields"][inp][0]
+                        value = blocks[id]["fields"][inp][0]
                     elif inp in ["SUBSTACK", "SUBSTACK2"]:
-                        value = self.parseScript(value, blocks)
+                        value = []
+                        self.queue.insert(self.q, [id, value, True])
+                        self.q += 1
                     else:
-                        value = self.parseScript(value, blocks)
-                        value = value[0] # TODO Always works?
+                        value = []
+                        self.queue.insert(self.q, [id, value, False])
+                        self.q += 1
                 elif value == None:
                     # Blank value in bool input is null in sb3 but false in sb2
                     if not inp in ["SUBSTACK", "SUBSTACK2"]:
                         value = False
+                    else:
+                        value = None
                 else:
                     self.log.warning("Invalid block id: 's'" %value)
 
@@ -720,7 +734,7 @@ if __name__ == "__main__":
     parser.add_argument("sb2_path", help="path to the .sb2 projet, default gotten from sb3_path", nargs="?", default=None)
     parser.add_argument("specmap", help="path to the specmap json, defaults to './specmap2.json'", nargs="?", default="./specmap2.json")
     parser.add_argument("-s", "--specmap", help="alternate to specmap_path")
-    parser.add_argument("-o", "--overwrite", help="overwrite existing files at the sb2 destination", action="store_true")
+    parser.add_argument("-w", "--overwrite", help="overwrite existing files at the sb2 destination", action="store_true")
     parser.add_argument("-d", "--debug", help="save a debug json to './project.json' if overwrite is enabled", action="store_true")
     parser.add_argument("-v", "--verbosity", help="controls printed verbosity", action="count", default=0)
     args = parser.parse_args()
