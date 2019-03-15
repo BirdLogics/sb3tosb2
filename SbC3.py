@@ -115,8 +115,7 @@ def saveProject(sb2, filemap, sb2_path, sb3_path, overwrite=False, debug=False):
         # Open the .sb3 to get its assets
         sb3_file = zipfile.ZipFile(sb3_path, "r")
 
-        for i in range(0, 1):
-            numId = 0
+        for i in [0, 1]:
             for id in filemap[i]:
                 # Get the sb3 asset
                 asset = filemap[i][id]
@@ -151,15 +150,14 @@ def saveProject(sb2, filemap, sb2_path, sb3_path, overwrite=False, debug=False):
                 
                 # Save sb2 assetId info
                 if i == 0: # Sound
-                    asset[1]["soundID"] = numId
+                    assetId2 = asset[1]["soundID"]
                     asset[1]["md5"] = assetId + "." + format
                 elif i == 1: # Costume
-                    asset[1]["baseLayerID"] = numId
+                    assetId2 = asset[1]["baseLayerID"]
                     asset[1]["baseLayerMD5"] = assetId + "." + format
-                numId += 1
 
                 # Save the sb2 asset
-                fileName2 = str(numId) + "." + format
+                fileName2 = str(assetId2) + "." + format
                 sb2_file.writestr(fileName2, assetFile)
 
         print("Saved to '%s'" % sb2_path)
@@ -240,7 +238,9 @@ class Converter:
         # Parse all monitors which go with sprites
         self.monitors = []
         for monitor in self.sb3["monitors"]:
-            self.monitors.append(self.parseMonitor(monitor))
+            monitor2 = self.parseMonitor(monitor)
+            if monitor2:
+                self.monitors.append(monitor2)
 
         # Parse each target(sprite)
         for target in self.sb3["targets"]:
@@ -408,10 +408,11 @@ class Converter:
                     "costumeName": costume["name"],
                     "baseLayerID": len(self.filemap[1]),
                     "BaseLayerMD5": costume["md5ext"],
-                    "bitmapResolution": costume["bitmapResolution"],
                     "rotationCenterX": costume["rotationCenterX"],
                     "rotationCenterY": costume["rotationCenterY"]
                 }
+                if "bitmapResolution" in costume:
+                    costume2["bitmapResolution"] = costume["bitmapResolution"]
                 self.filemap[1][costume["assetId"]] = [costume, costume2]
             costumes.append(costume2)
         sprite["costumes"] = costumes
@@ -703,7 +704,6 @@ class Converter:
 
     def parseMonitor(self, monitor):
         """Parse a sb3 monitor into an sb2 monitor."""
-        cmd = ""
         param = ""
         if monitor["opcode"] == "data_variable":
             cmd = "getVar:"
@@ -742,6 +742,26 @@ class Converter:
         else:
             log.warning("Unkown monitor '%s'" % monitor["opcode"])
             return None # TODO Here
+        
+        if monitor["spriteName"]:
+            label = monitor["spriteName"] + ": " + param
+        else:
+            label = param
+        
+        return {
+            "target": monitor["spriteName"] or "Stage",
+            "cmd": cmd,
+            "param": param or None,
+            "color": color,
+            "label": label,
+            "mode": self.monitorModes[monitor["mode"]],
+            "sliderMin": ("min" in monitor and monitor["min"] or 0),
+            "sliderMax": ("max" in monitor and monitor["max"] or 100),
+            "isDiscrete": True,
+            "x": monitor["x"],
+            "y": monitor["y"],
+            "visible": monitor["visible"]
+        }
 
 # Run the program if not imported as a module
 if __name__ == "__main__":
