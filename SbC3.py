@@ -2,6 +2,7 @@
 # Version 0.2.0
 
 import argparse
+import hashlib
 import json
 import logging
 import zipfile
@@ -114,14 +115,52 @@ def saveProject(sb2, filemap, sb2_path, sb3_path, overwrite=False, debug=False):
         # Open the .sb3 to get its assets
         sb3_file = zipfile.ZipFile(sb3_path, "r")
 
-        for group in filemap:
-            for i in range(0, len(group)):
-                # Get the file names
-                fileName3 = group[i]
-                fileName2 = str(i) + "." + fileName3.split(".")[-1]
+        for i in range(0, 1):
+            numId = 0
+            for id in filemap[i]:
+                # Get the sb3 asset
+                asset = filemap[i][id]
+                assetId = asset[0]["assetId"]
+                name = asset[0]["name"]
+                format = asset[0]["dataFormat"]
+                md5ext = asset[0]["md5ext"]
 
-                f = sb3_file.read(fileName3)
-                sb2_file.writestr(fileName2, f)
+                # Load the sb3 asset
+                assetFile = sb3_file.read(md5ext)
+
+                # Check the format
+                if format == "wav":
+                    pass # TODO wav sound resampling
+                elif format == "mp3":
+                    log.warning("Sound conversion for mp3 '%s' not supported.")
+                    continue
+                elif format == "png":
+                    pass
+                elif format == "svg":
+                    pass # TODO svg repair
+                else:
+                    log.warning("Unrecognized file format '%s'" % format)
+
+                # Check the file md5
+                md5 = hashlib.md5(assetFile).hexdigest()
+                if md5 != assetId:
+                    if assetId == group[id][0]["assetId"]:
+                        log.warning("The md5 for %s '%s' is invalid.", format, name)
+                    else:
+                        log.error("The md5 for asset '%s' is invalid.", group[id][0]["assetId"])
+                
+                # Save sb2 assetId info
+                if i == 0: # Sound
+                    asset[1]["soundID"] = numId
+                    asset[1]["md5"] = assetId + "." + format
+                elif i == 1: # Costume
+                    asset[1]["baseLayerID"] = numId
+                    asset[1]["baseLayerMD5"] = assetId + "." + format
+                numId += 1
+
+                # Save the sb2 asset
+                fileName2 = str(numId) + "." + format
+                sb2_file.writestr(fileName2, assetFile)
 
         print("Saved to '%s'" % sb2_path)
         return True
@@ -147,7 +186,7 @@ class Converter:
     sb2 = {} # The sb2 project json
 
     specmap2 = {} # A specmap for sb3 to sb2
-    filemap = [[], []] # List of sb3 files and their sb2 names
+    filemap = [{}, {}] # List of sb3 files and their sb2 names
 
     sprites = [] # Holds the children of the stage
     blockIds = [] # Temporarily holds blockIds for anchoring comments
@@ -250,12 +289,7 @@ class Converter:
                 isCloud = False
 
             value = var[1]
-            if value == "Infinity":
-                value = float("Inf")
-            elif value == "-Infinity":
-                value = float("-Inf")
-            elif value == "NaN":
-                value = float("NaN")
+            value = self.specialNumber(value, self.numberOpt)
             
             variables.append({
                 "name": var[0],
@@ -276,14 +310,9 @@ class Converter:
             else:
                 monitor = None
 
-            # Convert special values
+            # Convert special values and possibly optimize all numbers
             for i in range(0, len(l[1])):
-                if l[1][i] == "Infinity":
-                    l[1][i] = float("Inf")
-                elif l[1][i] == "-Infinity":
-                    l[1][i] = float("-Inf")
-                elif l[1][i] == "NaN":
-                    l[1][i] = float("NaN")
+                l[1][i] = self.specialNumber(l[1][i], self.numberOpt)
 
             lists.append({
                 "listName": l[0],
@@ -316,7 +345,7 @@ class Converter:
                 ]
 
                 if block[0] == 12: # Variable reporter
-                    script[2].append(["readVariable", block[1]])
+                    script[2].append(["readVariable", block[1]]) # TODO check for hacked blocks
                 elif block[0] == 13: # List reporter
                     script[2].append(["contentsOfList:", block[1]])
                 
@@ -353,41 +382,38 @@ class Converter:
         # Get sounds
         sounds = []
         for sound in target["sounds"]:
-            if not sound["md5ext"] in self.filemap[0]:
-                self.filemap[0].append(sound["md5ext"])
-            sounds.append({
-                "soundName": sound["name"],
-                "soundID": self.filemap[0].index(sound["md5ext"]),
-                "md5": sound["md5ext"],
-                "sampleCount": sound["sampleCount"], # TODO These are messed up, sound is high pitched
-                "rate": sound["rate"],
-                "format": "" # TODO Sound format?
-            })
+            if sound["assetId"] in self.filemap[0]:
+                sound2 = self.filemap[0][sound["assetId"]][1]
+            else:
+                sound2 = {
+                    "soundName": sound["name"],
+                    "soundID": len(self.filemap[0]),
+                    "md5": sound["md5ext"],
+                    "sampleCount": sound["sampleCount"], # TODO These are messed up, sound is high pitched
+                    "rate": sound["rate"],
+                    "format": "" # TODO Sound format
+                }
+                self.filemap[0][sound["assetId"]] = [sound, sound2]
+            sounds.append(sound2)
         if sounds:
             sprite["sounds"] = sounds
 
         # Get costumes
         costumes = []
         for costume in target["costumes"]:
-            if not costume["md5ext"] in self.filemap[1]:
-                self.filemap[1].append(costume["md5ext"])
-            if "bitmapResolution" in costume:
-                costumes.append({
+            if costume["assetId"] in self.filemap[1]:
+                costume2 = self.filemap[1][costume["assetId"]][1]
+            else:
+                costume2 = {
                     "costumeName": costume["name"],
-                    "baseLayerID": self.filemap[1].index(costume["md5ext"]),
+                    "baseLayerID": len(self.filemap[1]),
                     "BaseLayerMD5": costume["md5ext"],
                     "bitmapResolution": costume["bitmapResolution"],
                     "rotationCenterX": costume["rotationCenterX"],
                     "rotationCenterY": costume["rotationCenterY"]
-                })
-            else:
-                costumes.append({
-                    "costumeName": costume["name"],
-                    "baseLayerID": self.filemap[1].index(costume["md5ext"]),
-                    "baseLayerMD5": costume["md5ext"],
-                    "rotationCenterX": costume["rotationCenterX"],
-                    "rotationCenterY": costume["rotationCenterY"]
-                })
+                }
+                self.filemap[1][costume["assetId"]] = [costume, costume2]
+            costumes.append(costume2)
         sprite["costumes"] = costumes
 
         # Get other attributes
