@@ -236,11 +236,11 @@ class Converter:
     def convert(self):
         """Convert the loaded sb3 project to sb2 format"""
         # Parse all monitors which go with sprites
-        self.monitors = []
+        self.monitors = {}
         for monitor in self.sb3["monitors"]:
             monitor2 = self.parseMonitor(monitor)
             if monitor2:
-                self.monitors.append(monitor2)
+                self.monitors[monitor["id"]] = monitor2
 
         # Parse each target(sprite)
         for target in self.sb3["targets"]:
@@ -251,7 +251,7 @@ class Converter:
                 self.sprites.append(object)
 
         # Add the sprites and monitors to the stage
-        self.sb2["children"] = self.sprites + self.monitors
+        self.sb2["children"] = self.sprites + list(self.monitors.values())
 
         # Add info about this converter and project
         self.sb2["info"] = {
