@@ -1,19 +1,23 @@
 # Sb3 to Sb2 Converter 
 # Version 0.2.0
 
-import argparse
-import json
-import logging
-import zipfile
+import argparse, logging
+import audioop, io, wave
+import json, hashlib, zipfile
 
-def main(sb3_path, sb2_path, specmap_path="./specmap2.json", overwrite=False, debug=0):
+# Configure the logger for the converter
+logging.basicConfig(format="%(levelname)s: %(message)s", level=30)
+log = logging.getLogger()
+
+def main(sb3_path, sb2_path, specmap_path="./specmap2.json", overwrite=False, optimize=False, debug=False):
     """Automatically converts a sb3 file and saves it in sb2 format.
     
     sb3_path -- the path to the .sb3 file
     sb2_path -- the save path for the .sb2 file
     specmap_path -- change the load path for the sb3 to sb2 specmap
-    overwrite -- allow overwriting existing files'
-    debug -- save a debug to project.json if overwrite is enabled"""
+    overwrite -- allow overwriting existing files
+    debug -- save a debug to project.json if overwrite is enabled
+    optimize -- try to convert strings to numbers"""
 
     # Load the sb3 to sb2 specmap
     specmap2 = loadSpecmap(specmap_path)
@@ -23,14 +27,20 @@ def main(sb3_path, sb2_path, specmap_path="./specmap2.json", overwrite=False, de
 
     # Make sure everything loaded correctly
     if sb3 and specmap2:
+        # Get the convertor object
+        project = Converter(sb3, specmap2)
+
+        # Set optimizations
+        project.numberOpt = optimize
+        project.spaceOpt = optimize
+
         # Convert the project
-        project = Converter(sb3, specmap2, debug>0)
         sb2, filemap = project.convert()
 
         # Save the project
-        saveProject(sb2, filemap, sb2_path, sb3_path, overwrite, debug>1)
+        saveProject(sb2, filemap, sb2_path, sb3_path, overwrite, debug)
     else:
-        print("Failed to load necessary files.")
+        log.critical("Failed to load necessary files.")
 
 def loadSpecmap(spec_path="./specmap2.json"):
     """Loads the sb3 to sb2 specmap json and parse it."""
@@ -40,14 +50,13 @@ def loadSpecmap(spec_path="./specmap2.json"):
         specmap2 = json.load(specmap2_file)
         return specmap2
     except FileNotFoundError:
-        print("Specmap file '%s' not found." % spec_path)
+        log.warning("Specmap file '%s' not found." % spec_path)
         return False
     except json.decoder.JSONDecodeError:
-        print("Ffile '%s' is not a valid json file." % spec_path)
+        log.warning("Ffile '%s' is not a valid json file." % spec_path)
         return False
     except:
-        print("Unkown error opening '%s'." % spec_path)
-        raise
+        log.error("Unkown error opening '%s'." % spec_path, exc_info=True)
     finally:
         if specmap2_file: specmap2_file.close()
 
@@ -60,17 +69,16 @@ def loadProject(sb3_path):
         sb3 = json.loads(sb3_json)
         return sb3
     except FileNotFoundError:
-        print("Project file '%s' not found." % sb3_path)
+        log.warning("Project file '%s' not found." % sb3_path)
         return False
     except zipfile.BadZipFile:
-        print("File '%s' is not a valid zip file.")
+        log.warning("File '%s' is not a valid zip file.")
         return False
     except json.decoder.JSONDecodeError:
-        print("File '%s/project.json' is not a valid json file." % sb3_path)
+        log.warning("File '%s/project.json' is not a valid json file." % sb3_path)
         return False
     except:
-        print("Unkown error opening '%s'." % sb3_path)
-        raise
+        log.error("Unkown error opening '%s'." % sb3_path, exc_info=True)
     finally:
         if sb3_file: sb3_file.close()
     return False
@@ -83,80 +91,194 @@ def saveProject(sb2, filemap, sb2_path, sb3_path, overwrite=False, debug=False):
 
     # Save the results
     try:
-        # Get the sb2 json string
-        sb2_json = json.dumps(sb2, indent=4, separators=(',', ': '))
+        # Open the .sb3 to get its assets
+        sb3_file = zipfile.ZipFile(sb3_path, "r")
 
         if overwrite:
             # Open and overwrite existing files
             sb2_file = zipfile.ZipFile(sb2_path, "w")
-
-            if debug:
-                # Save a copy of the json
-                sb2_jfile = open("project.json", "w")
-                sb2_jfile.write(sb2_json)
-                print("Saved debug to 'project.json'.")
         else:
             # Will throw an error if a file already exists
             sb2_file = zipfile.ZipFile(sb2_path, "x")
+
+        # Process all sounds
+        for s in filemap[0]:
+            # Get the sb3 asset
+            asset = filemap[0][s]
+            name = asset[0]["name"]
+            format = asset[0]["dataFormat"]
+            md5ext = asset[0]["md5ext"]
+            md5 = asset[0]["assetId"]
+
+            # Get the sb2 asset
+            data = sb3_file.read(md5ext)
+            assetId = asset[1]["soundID"]
+
+            if format == "wav":
+                # 
+                try:
+                    data = processWave(data, asset[1])
+                    md5 = hashlib.md5(data).hexdigest()
+                except wave.Error:
+                    log.warning("Failed to convert wav sound '%s'." %asset[0]["name"], exc_info=True)
+                except:
+                    log.error("Unkown error converting sound '%s'." %asset[0]["assetId"], exc_info=True)
+            elif format == "mp3":
+                log.warning("Sound conversion for mp3 '%s' not supported." %asset[0]["name"])
+                continue
+            else:
+                log.warning("Unrecognized sound format '%s'." %format)
+
+            # Save the sb2 asset
+            asset[1]["md5"] = md5 + "." + format
+            fileName2 = str(assetId) + "." + format
+            sb2_file.writestr(fileName2, data)
+
+        for c in filemap[1]:
+            # Get the sb3 asset
+            asset = filemap[1][c]
+            assetId = asset[0]["assetId"]
+            name = asset[0]["name"]
+            format = asset[0]["dataFormat"]
+            md5ext = asset[0]["md5ext"]
+
+            # Load the sb3 asset
+            assetData = sb3_file.read(md5ext)
+                
+
+            # Check the format
+            if format == "png":
+                pass
+            elif format == "svg":
+                pass # TODO svg repair
+            else:
+                log.warning("Unrecognized file format '%s'" % format)
+
+            # Check the file md5
+            md5 = hashlib.md5(assetData).hexdigest()
+            if md5 != assetId:
+                if assetId == asset[0]["assetId"]:
+                    log.warning("The md5 for %s '%s' is invalid.", format, name)
+                else:
+                    log.error("The md5 for asset '%s' is invalid.", group[id][0]["assetId"])
+            
+            # Save sb2 assetId info
+            assetId2 = asset[1]["baseLayerID"]
+            asset[1]["baseLayerMD5"] = assetId + "." + format
+
+            # Save the sb2 asset
+            fileName2 = str(assetId2) + "." + format
+            sb2_file.writestr(fileName2, assetData)
+
+        # Get the sb2 json string
+        sb2_json = json.dumps(sb2, indent=4, separators=(',', ': '))
+
+        if debug and overwrite:
+            # Save a copy of the json
+            sb2_jfile = open("project.json", "w")
+            sb2_jfile.write(sb2_json)
+            print("Saved debug to 'project.json'.")
         
         # Save the sb2 json
         sb2_file.writestr("project.json", sb2_json)
 
-        # Open the .sb3 to get its assets
-        sb3_file = zipfile.ZipFile(sb3_path, "r")
-
-        for group in filemap:
-            for i in range(0, len(group)):
-                # Get the file names
-                fileName3 = group[i]
-                fileName2 = str(i) + "." + fileName3.split(".")[-1]
-
-                f = sb3_file.read(fileName3)
-                sb2_file.writestr(fileName2, f)
-
         print("Saved to '%s'" % sb2_path)
         return True
     except FileExistsError:
-        print("File '%s' already exists. Delete or rename it and try again." % sb2_path)
+        log.warning("File '%s' already exists. Delete or rename it and try again." % sb2_path)
         return False
     except FileNotFoundError:
-        print("File '%s' not found." % sb3_path)
+        log.warning("File '%s' not found." % sb3_path)
         return False
     except:
-        print("Unkown error saving to '%s' or reading from '%s'." % (sb2_path, sb3_path))
-        raise
+        log.error("Unkown error saving to '%s' or reading from '%s'." % (sb2_path, sb3_path), exc_info=True)
+        return False
     finally:
         if sb2_file: sb2_file.close()
         if sb2_jfile: sb2_jfile.close()
         elif debug: print("Did not save debug json to 'project.json'.")
         if sb3_file: sb3_file.close()
 
+supportedRates = [44100, 22050, 11025, 5512] # Sound rates supported by flash TODO Maybe just get actual sound rate?
+def processWave(data, asset):
+    if asset["format"] == "adpcm":
+        log.warning("Sound rate verification for adpcm wav '%s' not supported." % asset["soundName"])
+        return data
+
+    # Read the sound with wave
+    data = io.BytesIO(data)
+    wav = wave.open(data, "rb")
+
+    # Get info about the sound
+    channels = wav.getnchannels()
+    width = wav.getsampwidth()
+    rate = wav.getframerate() # TODO These don't match json?
+    sampleCount = wav.getnframes()
+
+    # Resample and monofy the sound
+    changed = False
+    sound = wav.readframes(sampleCount)
+    if channels > 1:
+        log.debug("Monofying sound '%s'" %asset["md5"])
+        sound = audioop.tomono(sound, width, 1, 1)
+        changed = True
+    if not rate in supportedRates:
+        log.debug("Resamping sound '%s'" %asset["md5"])
+        # Find the highest supported rate TODO Is this the best way?
+        newRate = supportedRates[-1]
+        for r in supportedRates:
+            if rate > r:
+                newRate = r
+                break
+
+        # Resample the sound
+        sound = audioop.ratecv(sound, width, 1, rate, newRate, None)[0]
+        rate = newRate
+        changed = True
+    
+    if changed:
+        # Get the wav data
+        data = io.BytesIO()
+        wav = wave.open(data, "wb")
+        wav.setnchannels(1)
+        wav.setframerate(rate)
+        wav.setsampwidth(width)
+        wav.writeframes(sound)
+
+    # Save framerate and sampleCount
+    data.seek(0)
+    wav = wave.open(data, "rb")
+    asset["rate"] = wav.getframerate()
+    asset["sampleCount"] = wav.getnframes()
+
+    data.seek(0)
+    return data.read()
+
 class Converter:
     """Class for converting a sb3 project json to the sb2 format"""
 
     sb3 = {} # The sb3 project json
     sb2 = {} # The sb2 project json
-    specmap2 = {} # A specmap for sb3 to sb2
-    filemap = [[],[]] # List of the sb3 files and their sb2 names
 
-    rotationStyles = {"all around": "normal", "left-right":"leftRight", 
-                    "don't rotate": "none"} # A key for sb3 rotation styles to sb2
-    
-    # TODO Make space adjustable based on version made in
-    spaceX = 1.5 # Size adjustment factor
-    spaceY = 2.2 # Works best for projects spaced in 2.0
+    specmap2 = {} # A specmap for sb3 to sb2
+    filemap = [{}, {}] # List of sb3 files and their sb2 names
 
     sprites = [] # Holds the children of the stage
-    monitors = {} # Holds monitors and their positions
+    blockIds = [] # Temporarily holds blockIds for anchoring comments
 
-    blockIds = [] # Holds blockIds for anchoring comments
+    # TODO Make space adjustable based on version made in
+    spaceX = 1.5 # Size adjustment factor
+    spaceY = 2.2 # Works best for projects spaced in sb2
+
+    # TODO Create more optimizations
+    numberOpt = False # Try to convert all strings to numbers
+    spaceOpt = False # TODO Remove contents of hidden list monitors?
 
     staticFields = ["sensing_current", # Some fields are all caps for some reason
-        "looks_changeeffectby", "looks_seteffectto"]
+        "looks_changeeffectby", "looks_seteffectto"] # TODO Add more
 
-    extensions = { # Holds conversion data for extensions
-        "wedo2":{"extensionName": "LEGO WeDo 2.0"}
-    }
+    rotationStyles = {"all around": "normal", "left-right":"leftRight", 
+                "don't rotate": "none"} # A key for sb3 rotation styles to sb2
 
     monitorModes = {"default": 1, "large": 2, "slider": 3}
 
@@ -179,80 +301,23 @@ class Converter:
         "data": 15629590, "sensing": 2926050
     }
 
-    debug = False # Whether to display error messages
-    log = None
+    extensions = { # Holds conversion data for extensions
+        "wedo2": {"extensionName": "LEGO WeDo 2.0"}
+    }
 
-    def __init__(self, project, specmap2, debug=False):
+    def __init__(self, project, specmap2):
         """Sets the sb3 project and specmap for the convertor."""
         self.sb3 = project
         self.specmap2 = specmap2
-
-        # Configure the log
-        self.log = logging.getLogger()
-        self.debug = debug
     
     def convert(self):
         """Convert the loaded sb3 project to sb2 format"""
-        # Get the monitors for use with lists
+        # Parse all monitors which go with sprites
+        self.monitors = {}
         for monitor in self.sb3["monitors"]:
-            cmd = ""
-            param = ""
-            if monitor["opcode"] == "data_variable":
-                cmd = "getVar:"
-                param = monitor["params"]["VARIABLE"]
-                color = self.monitorColors["data"]
-            elif monitor["opcode"] == "data_listcontents":
-                self.monitors[monitor["id"]] = {
-                    "listName": monitor["params"]["LIST"],
-                    "contents": ("value" in monitor and monitor["value"] or []),
-                    "isPersistent": False,
-                    "x": monitor["x"],
-                    "y": monitor["y"],
-                    "width": monitor["width"],
-                    "height": monitor["height"],
-                    "visible": monitor["visible"]
-                }
-            elif monitor["opcode"] == "looks_costumenumbername":
-                if monitor["params"]["NUMBER_NAME"] == "number":
-                    cmd = "costumeIndex"
-                    color = self.monitorColors["looks"]
-                elif monitor["params"]["NUMBER_NAME"] == "name":
-                    self.log.warning("Monitor costume name not supported.")
-            elif monitor["opcode"] == "looks_backdropnumbername":
-                if monitor["params"]["NUMBER_NAME"] == "number":
-                    cmd = "backgroundIndex"
-                elif monitor["params"]["NUMBER_NAME"] == "name":
-                    cmd = "sceneName"
-                color = self.monitorColors["looks"]
-            elif monitor["opcode"] == "sensing_current":
-                cmd = "timeAndDate"
-                param = monitor["params"]["CURRENTMENU"].lower()
-                color = self.monitorColors["sensing"]
-            elif monitor["opcode"] in self.monitorOpcodes:
-                cmd = self.monitorOpcodes[monitor["opcode"]]
-                color = self.monitorColors[monitor["opcode"].split("_")[0]]
-            else:
-                self.log.warning("Unkown monitor '%s'" % monitor["opcode"])
-
-            if cmd:
-                if monitor["spriteName"]:
-                    label = monitor["spriteName"] + ": " + param
-                else:
-                    label = param
-                self.monitors[monitor["id"]] = {
-                    "target": monitor["spriteName"] or "Stage",
-                    "cmd": cmd,
-                    "param": param or None,
-                    "color": color,
-                    "label": label,
-                    "mode": self.monitorModes[monitor["mode"]],
-                    "sliderMin": ("min" in monitor and monitor["min"] or 0),
-                    "sliderMax": ("max" in monitor and monitor["max"] or 100),
-                    "isDiscrete": True,
-                    "x": monitor["x"],
-                    "y": monitor["y"],
-                    "visible": monitor["visible"]
-                }
+            monitor2 = self.parseMonitor(monitor)
+            if monitor2:
+                self.monitors[monitor["id"]] = monitor2
 
         # Parse each target(sprite)
         for target in self.sb3["targets"]:
@@ -263,8 +328,7 @@ class Converter:
                 self.sprites.append(object)
 
         # Add the sprites and monitors to the stage
-        monitors = list(self.monitors.values())
-        self.sb2["children"] = self.sprites + monitors
+        self.sb2["children"] = self.sprites + list(self.monitors.values())
 
         # Add info about this converter and project
         self.sb2["info"] = {
@@ -293,8 +357,8 @@ class Converter:
 
         # Get variables
         variables = []
-        for id in target["variables"]:
-            var = target["variables"][id]
+        for v in target["variables"]:
+            var = target["variables"][v]
 
             if len(var) == 3 and var[2]:
                 isCloud = True
@@ -302,12 +366,7 @@ class Converter:
                 isCloud = False
 
             value = var[1]
-            if value == "Infinity":
-                value = float("Inf")
-            elif value == "-Infinity":
-                value = float("-Inf")
-            elif value == "NaN":
-                value = float("NaN")
+            value = self.specialNumber(value, self.numberOpt)
             
             variables.append({
                 "name": var[0],
@@ -319,27 +378,22 @@ class Converter:
 
         # Get lists
         lists = []
-        for id in target["lists"]:
-            l = target["lists"][id]
+        for l in target["lists"]:
+            lst = target["lists"][l]
 
             # Get the monitor related to this list
-            if id in self.monitors:
-                monitor = self.monitors[id]
+            if l in self.monitors:
+                monitor = self.monitors[l]
             else:
                 monitor = None
 
-            # Convert special values
-            for i in range(0, len(l[1])):
-                if l[1][i] == "Infinity":
-                    l[1][i] = float("Inf")
-                elif l[1][i] == "-Infinity":
-                    l[1][i] = float("-Inf")
-                elif l[1][i] == "NaN":
-                    l[1][i] = float("NaN")
+            # Convert special values and possibly optimize all numbers
+            for i in range(0, len(lst[1])):
+                lst[1][i] = self.specialNumber(lst[1][i], self.numberOpt)
 
             lists.append({
-                "listName": l[0],
-                "contents": l[1],
+                "listName": lst[0],
+                "contents": lst[1],
                 "isPersistent": False,
                 "x": monitor and monitor["x"] or 5,
                 "y": monitor and monitor["y"] or 5,
@@ -353,11 +407,11 @@ class Converter:
         # Get scripts
         self.blockIds = [] # Holds blocks for comment anchoring
         scripts = []
-        for id in target["blocks"]:
-            block = target["blocks"][id]
+        for b in target["blocks"]:
+            block = target["blocks"][b]
             if type(block) == dict:
                 if block["topLevel"]:
-                    script = self.parseScript(id, target["blocks"])
+                    script = self.parseScript(b, target["blocks"])
                     scripts.append(script)
             elif type(block) == list:
                 # Handle reporter values not in a block
@@ -368,20 +422,20 @@ class Converter:
                 ]
 
                 if block[0] == 12: # Variable reporter
-                    script[2].append(["readVariable", block[1]])
+                    script[2].append(["readVariable", block[1]]) # TODO check for hacked blocks
                 elif block[0] == 13: # List reporter
                     script[2].append(["contentsOfList:", block[1]])
                 
                 scripts.append(script)
-                self.blockIds.append(id)
+                self.blockIds.append(b)
                 
         if scripts:
             sprite["scripts"] = scripts
 
         # Get script comments
         comments = []
-        for id in target["comments"]:
-            comment = target["comments"][id]
+        for c in target["comments"]:
+            comment = target["comments"][c]
             if comment["blockId"] in self.blockIds:
                 blockIndex = self.blockIds.index(comment["blockId"])
             else:
@@ -405,41 +459,39 @@ class Converter:
         # Get sounds
         sounds = []
         for sound in target["sounds"]:
-            if not sound["md5ext"] in self.filemap[0]:
-                self.filemap[0].append(sound["md5ext"])
-            sounds.append({
-                "soundName": sound["name"],
-                "soundID": self.filemap[0].index(sound["md5ext"]),
-                "md5": sound["md5ext"],
-                "sampleCount": sound["sampleCount"], # TODO These are messed up, sound is high pitched
-                "rate": sound["rate"],
-                "format": "" # TODO Sound format?
-            })
+            if sound["assetId"] in self.filemap[0]:
+                sound2 = self.filemap[0][sound["assetId"]][1]
+            else:
+                sound2 = {
+                    "soundName": sound["name"],
+                    "soundID": len(self.filemap[0]),
+                    "md5": sound["md5ext"],
+                    "sampleCount": sound["sampleCount"],
+                    "rate": sound["rate"],
+                    "format": "format" in sound and sound["format"] or ""
+                }
+                self.filemap[0][sound["assetId"]] = [sound, sound2]
+            sounds.append(sound2)
         if sounds:
             sprite["sounds"] = sounds
 
         # Get costumes
         costumes = []
         for costume in target["costumes"]:
-            if not costume["md5ext"] in self.filemap[1]:
-                self.filemap[1].append(costume["md5ext"])
-            if "bitmapResolution" in costume:
-                costumes.append({
-                    "costumeName": costume["name"],
-                    "baseLayerID": self.filemap[1].index(costume["md5ext"]),
-                    "BaseLayerMD5": costume["md5ext"],
-                    "bitmapResolution": costume["bitmapResolution"],
-                    "rotationCenterX": costume["rotationCenterX"],
-                    "rotationCenterY": costume["rotationCenterY"]
-                })
+            if costume["assetId"] in self.filemap[1]:
+                costume2 = self.filemap[1][costume["assetId"]][1]
             else:
-                costumes.append({
+                costume2 = {
                     "costumeName": costume["name"],
-                    "baseLayerID": self.filemap[1].index(costume["md5ext"]),
-                    "baseLayerMD5": costume["md5ext"],
+                    "baseLayerID": len(self.filemap[1]),
+                    "BaseLayerMD5": costume["md5ext"],
                     "rotationCenterX": costume["rotationCenterX"],
                     "rotationCenterY": costume["rotationCenterY"]
-                })
+                }
+                if "bitmapResolution" in costume:
+                    costume2["bitmapResolution"] = costume["bitmapResolution"]
+                self.filemap[1][costume["assetId"]] = [costume, costume2]
+            costumes.append(costume2)
         sprite["costumes"] = costumes
 
         # Get other attributes
@@ -464,63 +516,74 @@ class Converter:
             sprite["tempoBPM"] = target["tempo"]
             sprite["videoAlpha"] = round((100 - target["videoTransparency"]) / 100, 2)
         
-        self.log.info("Parsed sprite '%s'" %target["name"])
+        log.info("Parsed sprite '%s'" %target["name"])
 
         return sprite
 
     def parseScript(self, id, blocks):
         """Converts a sb3 script to a sb2 script."""
 
-        # Holds the parsed script
+        # The parsed script to be returned
         script = []
+        
+        # Holds the sb2 block being parsed
+        current = []
+        
+        # Holds the list which parsed blocks are added to
+        chain = []
+        
+        # Initialize the queue
+        self.queue = [[id, chain, True]]
 
-        # The parsed blocks
-        blocks2 = []
+        # Get the position of the script
+        script.append(round(blocks[id]["x"] / self.spaceX))
+        script.append(round(blocks[id]["y"] / self.spaceY))
+        
+        # Add the chain to the script
+        script.append(chain)
 
-        # The current block being parsed
-        block = id
+        while self.queue:
+            # Get the next block to be parsed
+            next = self.queue.pop(0)
+            blockId = next[0]
+            if next[2]:
+                # It's a stack
+                current = []
+                chain = next[1]
+            else:
+                # It's just a block
+                current = next[1]
+                chain = False
 
-        # Check if the block is top level
-        if blocks[id]["topLevel"]:
-            # Get the position of the script
-            script.append(round(blocks[id]["x"] / self.spaceX))
-            script.append(round(blocks[id]["y"] / self.spaceY))
-            topLevel = True
-        else:
-            topLevel = False
 
-        while block:
             # Save the id for comment anchoring
-            self.blockIds.append(block)
+            self.blockIds.append(blockId)
 
             # Get the sb3 block
-            block = blocks[block]
-
-            # Holds the parsed block
-            block2 = []
+            block3 = blocks[blockId]
 
             # Get the 3.0 opcode
-            opcode = block["opcode"]
+            opcode = block3["opcode"]
 
             # Get the specmap for the block, handle custom blocks
             argmap = None
             if opcode == "procedures_definition":
                 # Handle custom block definition
-                value = block["inputs"]["custom_block"][1]
+                value = block3["inputs"]["custom_block"][1]
                 value = blocks[value]["mutation"]
-                block2.append("procDef")
-                block2.append(value["proccode"])
-                block2.append(json.loads(value["argumentnames"]))
-                block2.append(json.loads(value["argumentdefaults"]))
+                current.append("procDef")
+                current.append(value["proccode"])
+                current.append(json.loads(value["argumentnames"]))
+                current.append(json.loads(value["argumentdefaults"]))
                 if value["warp"] == "true" or value["warp"] == True:
-                    block2.append(True)
+                    current.append(True)
                 elif value["warp"] == "false" or value["warp"] == False:
-                    block2.append(False)
+                    current.append(False)
             elif opcode == "procedures_call":
                 # Handle custom block call
-                value = block["mutation"]
-                block2.append("call")
-                block2.append(value["proccode"])
+                value = block3["mutation"]
+                current.append("call")
+                current.append(value["proccode"])
 
                 # Create a custom argument map
                 argmap = []
@@ -528,102 +591,98 @@ class Converter:
                     argmap.append(["input",arg])
             elif opcode == "argument_reporter_string_number":
                 # Handle custom block string/number reporter
-                block2.append("getParam")
-                block2.append(block["fields"]["VALUE"][0])
-                block2.append("r")
+                current.append("getParam")
+                current.append(block3["fields"]["VALUE"][0])
+                current.append("r")
             elif opcode == "argument_reporter_boolean":
                 # Handle custom block boolean reporter
-                block2.append("getParam")
-                block2.append(block["fields"]["VALUE"][0])
-                block2.append("b")
+                current.append("getParam")
+                current.append(block3["fields"]["VALUE"][0])
+                current.append("b")
             # Handle some sb3 exclusive workarounds
             elif opcode == "looks_gotofrontback":
                 # Handle the new front/back argument
-                if block["fields"]["FRONT_BACK"][0] == "back":
-                    block2.append("goBackByLayers:")
-                    block2.append(999)
+                if block3["fields"]["FRONT_BACK"][0] == "back":
+                    current.append("goBackByLayers:")
+                    current.append(999)
                 else:
-                    block2.append("comeToFront")
+                    current.append("comeToFront")
             elif opcode == "looks_goforwardbackwardlayers":
                 # Handle the new fowards/back argument
-                block2.append("goBackByLayers:")
+                current.append("goBackByLayers:")
                 try:
-                    if block["fields"]["FORWARD_BACKWARD"][0] == "foward":
-                        block2.append(int(block["inputs"]["NUM"][1][1]) * -1)
+                    if block3["fields"]["FORWARD_BACKWARD"][0] == "foward":
+                        current.append(int(block3["inputs"]["NUM"][1][1]) * -1)
                     else:
-                        block2.append(block["inputs"]["NUM"][1][1])
+                        current.append(block3["inputs"]["NUM"][1][1])
                 except:
-                    block2.append(block["inputs"]["NUM"][1][1])
+                    current.append(block3["inputs"]["NUM"][1][1])
             elif opcode == "looks_costumenumbername":
-                if block["fields"]["NUMBER_NAME"][0] == "name":
-                    block2.append("costumeName") # Undefined block
+                if block3["fields"]["NUMBER_NAME"][0] == "name":
+                    current.append("costumeName") # Undefined block
                 else:
-                    block2.append("costumeIndex")
+                    current.append("costumeIndex")
             elif opcode == "looks_backdropnumbername":
-                if block["fields"]["NUMBER_NAME"][0] == "number":
-                    block2.append("backgroundIndex")
+                if block3["fields"]["NUMBER_NAME"][0] == "number":
+                    current.append("backgroundIndex")
                 else:
-                    block2.append("sceneName")
+                    current.append("sceneName")
             elif opcode == "data_deletealloflist":
-                block2.append("deleteLine:ofList:")
-                block2.append("all")
-                block2.append(block["fields"]["LIST"][0])
+                current.append("deleteLine:ofList:")
+                current.append("all")
+                current.append(block3["fields"]["LIST"][0])
             elif opcode in self.specmap2:
                 # Get the sb2 block id
-                block2.append(self.specmap2[opcode][0])
+                current.append(self.specmap2[opcode][0])
 
                 # Get the block's argmap
                 argmap = self.specmap2[opcode][1]
             else:
                 # It's probably a Scratch 3 block that this can't convert
-                block2.append(opcode)
+                current.append(opcode)
 
                 # Make a custom argmap for it
                 argmap = []
-                for field in block["fields"]:
+                for field in block3["fields"]:
                     argmap.append(["field",field])
-                for input in block["inputs"]:
+                for input in block3["inputs"]:
                     argmap.append(["input",input])
 
             if argmap != None:
-                # Loop through each parameter and parse it
+                # Arguments in the queue counter
+                self.q = 0
+
+                # Parse each parameter
                 for arg in argmap:
                     if arg[0] == "field":
                         # Get the sb3 field argument
-                        value = block["fields"][arg[1]][0]
+                        value = block3["fields"][arg[1]][0]
 
                         # Some fields are all caps for some reason
                         if opcode in self.staticFields:
                             value = value.lower()
                     elif arg[0] == "input":
-                        if arg[1] in block["inputs"]:
+                        if arg[1] in block3["inputs"]:
                             try:
                                 # Get the sb3 input argument
-                                value = self.parseInput(block, arg[1], blocks)
+                                value = self.parseInput(block3, arg[1], blocks)
                             except:
-                                self.log.error("Argument parsing problem.", exc_info=self.debug)
-                                value = block["inputs"][arg[1]]
+                                log.error("Argument parsing problem.", exc_info=True)
+                                value = block3["inputs"][arg[1]]
                         else:
                             value = None # Empty substacks not always stored?
-                    else:
-                        raise Exception("Invalid argmap")
 
                     # Add the parsed parameter to the block
-                    block2.append(value)
-
+                    current.append(value)
+            
             # Add the block to the script
-            blocks2.append(block2)
-
-            # Get the next block
-            block = block["next"]
-
-        if topLevel:
-            # Add the blocks to the script
-            script.append(blocks2)
-        else:
-            # This was called recursively
-            script = blocks2
-
+            if chain != False:
+                chain.append(current)
+            
+            # Add the next block to the queue
+            if block3["next"]:
+                self.queue.append([block3["next"], chain, True])
+        
         return script
 
     def parseInput(self, block, inp, blocks):
@@ -643,20 +702,24 @@ class Converter:
 
             if type(value) != list: # Make sure it's not a variable
                 if value in blocks:
-                    if blocks[value]["shadow"] and inp in blocks[value]["fields"]:
+                    id = value
+                    if blocks[id]["shadow"] and inp in blocks[id]["fields"]:
                         # It's probably be a menu
-                        value = blocks[value]["fields"][inp][0]
+                        value = blocks[id]["fields"][inp][0]
                     elif inp in ["SUBSTACK", "SUBSTACK2"]:
-                        value = self.parseScript(value, blocks)
+                        value = []
+                        self.queue.insert(self.q, [id, value, True])
+                        self.q += 1
                     else:
-                        value = self.parseScript(value, blocks)
-                        value = value[0] # TODO Always works?
+                        value = []
+                        self.queue.insert(self.q, [id, value, False])
+                        self.q += 1
                 elif value == None:
                     # Blank value in bool input is null in sb3 but false in sb2
                     if not inp in ["SUBSTACK", "SUBSTACK2"]:
                         value = False
                 else:
-                    self.log.warning("Invalid block id: 's'" %value)
+                    log.warning("Invalid block id: 's'" %value)
 
                 return value
 
@@ -675,7 +738,7 @@ class Converter:
             try:
                 value = int(value[1].strip("#"), 16)
             except ValueError:
-                self.log.warning("Unable to convert hex: '%s'" %value[1])
+                log.warning("Unable to convert hex: '%s'" %value[1])
                 value = value[1]
         else:
             # Handle other values
@@ -690,27 +753,92 @@ class Converter:
                 self.blockIds.append(None)
                 value = ["contentsOfList:", value[1]]
             else:
-                self.log.warning("Invalid value type: '%s'" %value[1])
+                log.warning("Invalid value type: '%s'" %value[1])
 
             return value
         
-        # It's a number, check special cases
+        # It's a number, try to convert it to one
+        value = self.specialNumber(value, True)
+
+        return value
+
+    def specialNumber(self, value, toNumber=True):
+        """Converts special strings to numbers."""
         if value == "Infinity":
-            value = float("inf")
+            value = float("Inf")
         elif value == "-Infinity":
-            value = float("-inf")
+            value = float("-Inf")
         elif value == "NaN":
-            value = float("nan")
-        else:
-            # Convert strings to numbers
+            value = float("NaN")
+        elif toNumber:
             try:
                 value = float(value)
                 if value == int(value):
                     value = int(value)
             except ValueError:
-                pass # Can happen with item all of list
-
+                pass # Normal
         return value
+
+    def parseMonitor(self, monitor):
+        """Parse a sb3 monitor into an sb2 monitor."""
+        param = ""
+        if monitor["opcode"] == "data_variable":
+            cmd = "getVar:"
+            param = monitor["params"]["VARIABLE"]
+            color = self.monitorColors["data"]
+        elif monitor["opcode"] == "data_listcontents":
+            return {
+                "listName": monitor["params"]["LIST"],
+                "contents": ("value" in monitor and monitor["value"] or []),
+                "isPersistent": False,
+                "x": monitor["x"],
+                "y": monitor["y"],
+                "width": monitor["width"],
+                "height": monitor["height"],
+                "visible": monitor["visible"]
+            }
+        elif monitor["opcode"] == "looks_costumenumbername":
+            if monitor["params"]["NUMBER_NAME"] == "number":
+                cmd = "costumeIndex"
+                color = self.monitorColors["looks"]
+            elif monitor["params"]["NUMBER_NAME"] == "name":
+                log.warning("Monitor costume name not supported.")
+        elif monitor["opcode"] == "looks_backdropnumbername":
+            if monitor["params"]["NUMBER_NAME"] == "number":
+                cmd = "backgroundIndex"
+            elif monitor["params"]["NUMBER_NAME"] == "name":
+                cmd = "sceneName"
+            color = self.monitorColors["looks"]
+        elif monitor["opcode"] == "sensing_current":
+            cmd = "timeAndDate"
+            param = monitor["params"]["CURRENTMENU"].lower()
+            color = self.monitorColors["sensing"]
+        elif monitor["opcode"] in self.monitorOpcodes:
+            cmd = self.monitorOpcodes[monitor["opcode"]]
+            color = self.monitorColors[monitor["opcode"].split("_")[0]]
+        else:
+            log.warning("Unkown monitor '%s'" % monitor["opcode"])
+            return None # TODO Here
+        
+        if monitor["spriteName"]:
+            label = monitor["spriteName"] + ": " + param
+        else:
+            label = param
+        
+        return {
+            "target": monitor["spriteName"] or "Stage",
+            "cmd": cmd,
+            "param": param or None,
+            "color": color,
+            "label": label,
+            "mode": self.monitorModes[monitor["mode"]],
+            "sliderMin": ("min" in monitor and monitor["min"] or 0),
+            "sliderMax": ("max" in monitor and monitor["max"] or 100),
+            "isDiscrete": True,
+            "x": monitor["x"],
+            "y": monitor["y"],
+            "visible": monitor["visible"]
+        }
 
 # Run the program if not imported as a module
 if __name__ == "__main__":
@@ -720,9 +848,10 @@ if __name__ == "__main__":
     parser.add_argument("sb2_path", help="path to the .sb2 projet, default gotten from sb3_path", nargs="?", default=None)
     parser.add_argument("specmap", help="path to the specmap json, defaults to './specmap2.json'", nargs="?", default="./specmap2.json")
     parser.add_argument("-s", "--specmap", help="alternate to specmap_path")
-    parser.add_argument("-o", "--overwrite", help="overwrite existing files at the sb2 destination", action="store_true")
+    parser.add_argument("-w", "--overwrite", help="overwrite existing files at the sb2 destination", action="store_true")
     parser.add_argument("-d", "--debug", help="save a debug json to './project.json' if overwrite is enabled", action="store_true")
     parser.add_argument("-v", "--verbosity", help="controls printed verbosity", action="count", default=0)
+    parser.add_argument("-o", "--optimize", help="try to convert all strings to numbers", action="store_true")
     args = parser.parse_args()
     
     # A bit more parsing
@@ -737,23 +866,20 @@ if __name__ == "__main__":
     overwrite = args.overwrite
     debug = args.debug
     verbosity = args.verbosity
-
-    # Get the debug level
-    if debug:
-        debug = 2
-    elif verbosity >= 1:
-        debug = 1
+    optimize = args.optimize
 
     # Get the verbosity level
     if verbosity == 0:
         verbosity = 30
     elif verbosity == 1:
         verbosity = 20
-    elif verbosity >= 2:
+    elif verbosity == 2:
         verbosity = 10
+    elif verbosity >= 3:
+        verbosity = 0
 
-    # Configure the logger
-    logging.basicConfig(format="%(levelname)s: %(message)s", level=verbosity)
+    # Configure the logger verbosity
+    log.level = verbosity
 
     # Run the converter with these arguments
-    main(sb3_path, sb2_path, specmap_path, overwrite, debug)
+    main(sb3_path, sb2_path, specmap_path, overwrite, optimize, debug)
