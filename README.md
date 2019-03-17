@@ -18,7 +18,5 @@ For more advanced usage, such as with different file names, run 'python SbC.py -
 
 ## Limitations
 - Comments may be incorrectly attached in hacked projects
-- Maximum depth of 1000 embeded blocks due to usage of python recursion
-- Sound rate and samples are corrupted resulting in a higher pitch
 - SVG(Vector mode) assets are not yet converted and may look wrong.
 - Work in progress; may be buggy
