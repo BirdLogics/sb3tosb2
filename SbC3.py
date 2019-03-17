@@ -1,11 +1,9 @@
 # Sb3 to Sb2 Converter 
 # Version 0.2.0
 
-import argparse
-import hashlib
-import json
-import logging
-import zipfile
+import argparse, logging
+import audioop, io, wave
+import json, hashlib, zipfile
 
 # Configure the logger for the converter
 logging.basicConfig(format="%(levelname)s: %(message)s", level=30)
@@ -93,72 +91,96 @@ def saveProject(sb2, filemap, sb2_path, sb3_path, overwrite=False, debug=False):
 
     # Save the results
     try:
-        # Get the sb2 json string
-        sb2_json = json.dumps(sb2, indent=4, separators=(',', ': '))
+        # Open the .sb3 to get its assets
+        sb3_file = zipfile.ZipFile(sb3_path, "r")
 
         if overwrite:
             # Open and overwrite existing files
             sb2_file = zipfile.ZipFile(sb2_path, "w")
-
-            if debug:
-                # Save a copy of the json
-                sb2_jfile = open("project.json", "w")
-                sb2_jfile.write(sb2_json)
-                print("Saved debug to 'project.json'.")
         else:
             # Will throw an error if a file already exists
             sb2_file = zipfile.ZipFile(sb2_path, "x")
+
+        # Process all sounds
+        for s in filemap[0]:
+            # Get the sb3 asset
+            asset = filemap[0][s]
+            name = asset[0]["name"]
+            format = asset[0]["dataFormat"]
+            md5ext = asset[0]["md5ext"]
+            md5 = asset[0]["assetId"]
+
+            # Get the sb2 asset
+            data = sb3_file.read(md5ext)
+            assetId = asset[1]["soundID"]
+
+            if format == "wav":
+                # 
+                try:
+                    data = processWave(data, asset[1])
+                    md5 = hashlib.md5(data).hexdigest()
+                except wave.Error:
+                    log.warning("Failed to convert wav sound '%s'." %asset[0]["name"], exc_info=True)
+                except:
+                    log.error("Unkown error converting sound '%s'." %asset[0]["assetId"], exc_info=True)
+            elif format == "mp3":
+                log.warning("Sound conversion for mp3 '%s' not supported." %asset[0]["name"])
+                continue
+            else:
+                log.warning("Unrecognized sound format '%s'." %format)
+
+            # Save the sb2 asset
+            asset[1]["md5"] = md5 + "." + format
+            fileName2 = str(assetId) + "." + format
+            sb2_file.writestr(fileName2, data)
+
+        for c in filemap[1]:
+            # Get the sb3 asset
+            asset = filemap[1][c]
+            assetId = asset[0]["assetId"]
+            name = asset[0]["name"]
+            format = asset[0]["dataFormat"]
+            md5ext = asset[0]["md5ext"]
+
+            # Load the sb3 asset
+            assetData = sb3_file.read(md5ext)
+                
+
+            # Check the format
+            if format == "png":
+                pass
+            elif format == "svg":
+                pass # TODO svg repair
+            else:
+                log.warning("Unrecognized file format '%s'" % format)
+
+            # Check the file md5
+            md5 = hashlib.md5(assetData).hexdigest()
+            if md5 != assetId:
+                if assetId == asset[0]["assetId"]:
+                    log.warning("The md5 for %s '%s' is invalid.", format, name)
+                else:
+                    log.error("The md5 for asset '%s' is invalid.", group[id][0]["assetId"])
+            
+            # Save sb2 assetId info
+            assetId2 = asset[1]["baseLayerID"]
+            asset[1]["baseLayerMD5"] = assetId + "." + format
+
+            # Save the sb2 asset
+            fileName2 = str(assetId2) + "." + format
+            sb2_file.writestr(fileName2, assetData)
+
+        # Get the sb2 json string
+        sb2_json = json.dumps(sb2, indent=4, separators=(',', ': '))
+
+        if debug and overwrite:
+            # Save a copy of the json
+            sb2_jfile = open("project.json", "w")
+            sb2_jfile.write(sb2_json)
+            print("Saved debug to 'project.json'.")
         
         # Save the sb2 json
         sb2_file.writestr("project.json", sb2_json)
-
-        # Open the .sb3 to get its assets
-        sb3_file = zipfile.ZipFile(sb3_path, "r")
-
-        for i in [0, 1]:
-            for id in filemap[i]:
-                # Get the sb3 asset
-                asset = filemap[i][id]
-                assetId = asset[0]["assetId"]
-                name = asset[0]["name"]
-                format = asset[0]["dataFormat"]
-                md5ext = asset[0]["md5ext"]
-
-                # Load the sb3 asset
-                assetFile = sb3_file.read(md5ext)
-
-                # Check the format
-                if format == "wav":
-                    pass # TODO wav sound resampling
-                elif format == "mp3":
-                    log.warning("Sound conversion for mp3 '%s' not supported.")
-                    continue
-                elif format == "png":
-                    pass
-                elif format == "svg":
-                    pass # TODO svg repair
-                else:
-                    log.warning("Unrecognized file format '%s'" % format)
-
-                # Check the file md5
-                md5 = hashlib.md5(assetFile).hexdigest()
-                if md5 != assetId:
-                    if assetId == group[id][0]["assetId"]:
-                        log.warning("The md5 for %s '%s' is invalid.", format, name)
-                    else:
-                        log.error("The md5 for asset '%s' is invalid.", group[id][0]["assetId"])
-                
-                # Save sb2 assetId info
-                if i == 0: # Sound
-                    assetId2 = asset[1]["soundID"]
-                    asset[1]["md5"] = assetId + "." + format
-                elif i == 1: # Costume
-                    assetId2 = asset[1]["baseLayerID"]
-                    asset[1]["baseLayerMD5"] = assetId + "." + format
-
-                # Save the sb2 asset
-                fileName2 = str(assetId2) + "." + format
-                sb2_file.writestr(fileName2, assetFile)
 
         print("Saved to '%s'" % sb2_path)
         return True
@@ -176,6 +198,61 @@ def saveProject(sb2, filemap, sb2_path, sb3_path, overwrite=False, debug=False):
         if sb2_jfile: sb2_jfile.close()
         elif debug: print("Did not save debug json to 'project.json'.")
         if sb3_file: sb3_file.close()
+
+supportedRates = [44100, 22050, 11025, 5512] # Sound rates supported by flash TODO Maybe just get actual sound rate?
+def processWave(data, asset):
+    if asset["format"] == "adpcm":
+        log.warning("Sound rate verification for adpcm wav '%s' not supported." % asset["soundName"])
+        return data
+
+    # Read the sound with wave
+    data = io.BytesIO(data)
+    wav = wave.open(data, "rb")
+
+    # Get info about the sound
+    channels = wav.getnchannels()
+    width = wav.getsampwidth()
+    rate = wav.getframerate() # TODO These don't match json?
+    sampleCount = wav.getnframes()
+
+    # Resample and monofy the sound
+    changed = False
+    sound = wav.readframes(sampleCount)
+    if channels > 1:
+        log.debug("Monofying sound '%s'" %asset["md5"])
+        sound = audioop.tomono(sound, width, 1, 1)
+        changed = True
+    if not rate in supportedRates:
+        log.debug("Resamping sound '%s'" %asset["md5"])
+        # Find the highest supported rate TODO Is this the best way?
+        newRate = supportedRates[-1]
+        for r in supportedRates:
+            if rate > r:
+                newRate = r
+                break
+
+        # Resample the sound
+        sound = audioop.ratecv(sound, width, 1, rate, newRate, None)[0]
+        rate = newRate
+        changed = True
+    
+    if changed:
+        # Get the wav data
+        data = io.BytesIO()
+        wav = wave.open(data, "wb")
+        wav.setnchannels(1)
+        wav.setframerate(rate)
+        wav.setsampwidth(width)
+        wav.writeframes(sound)
+
+    # Save framerate and sampleCount
+    data.seek(0)
+    wav = wave.open(data, "rb")
+    asset["rate"] = wav.getframerate()
+    asset["sampleCount"] = wav.getnframes()
+
+    data.seek(0)
+    return data.read()
 
 class Converter:
     """Class for converting a sb3 project json to the sb2 format"""
@@ -280,8 +357,8 @@ class Converter:
 
         # Get variables
         variables = []
-        for id in target["variables"]:
-            var = target["variables"][id]
+        for v in target["variables"]:
+            var = target["variables"][v]
 
             if len(var) == 3 and var[2]:
                 isCloud = True
@@ -301,22 +378,22 @@ class Converter:
 
         # Get lists
         lists = []
-        for id in target["lists"]:
-            l = target["lists"][id]
+        for l in target["lists"]:
+            lst = target["lists"][l]
 
             # Get the monitor related to this list
-            if id in self.monitors:
-                monitor = self.monitors[id]
+            if l in self.monitors:
+                monitor = self.monitors[l]
             else:
                 monitor = None
 
             # Convert special values and possibly optimize all numbers
-            for i in range(0, len(l[1])):
-                l[1][i] = self.specialNumber(l[1][i], self.numberOpt)
+            for i in range(0, len(lst[1])):
+                lst[1][i] = self.specialNumber(lst[1][i], self.numberOpt)
 
             lists.append({
-                "listName": l[0],
-                "contents": l[1],
+                "listName": lst[0],
+                "contents": lst[1],
                 "isPersistent": False,
                 "x": monitor and monitor["x"] or 5,
                 "y": monitor and monitor["y"] or 5,
@@ -330,11 +407,11 @@ class Converter:
         # Get scripts
         self.blockIds = [] # Holds blocks for comment anchoring
         scripts = []
-        for id in target["blocks"]:
-            block = target["blocks"][id]
+        for b in target["blocks"]:
+            block = target["blocks"][b]
             if type(block) == dict:
                 if block["topLevel"]:
-                    script = self.parseScript(id, target["blocks"])
+                    script = self.parseScript(b, target["blocks"])
                     scripts.append(script)
             elif type(block) == list:
                 # Handle reporter values not in a block
@@ -350,15 +427,15 @@ class Converter:
                     script[2].append(["contentsOfList:", block[1]])
                 
                 scripts.append(script)
-                self.blockIds.append(id)
+                self.blockIds.append(b)
                 
         if scripts:
             sprite["scripts"] = scripts
 
         # Get script comments
         comments = []
-        for id in target["comments"]:
-            comment = target["comments"][id]
+        for c in target["comments"]:
+            comment = target["comments"][c]
             if comment["blockId"] in self.blockIds:
                 blockIndex = self.blockIds.index(comment["blockId"])
             else:
@@ -389,9 +466,9 @@ class Converter:
                     "soundName": sound["name"],
                     "soundID": len(self.filemap[0]),
                     "md5": sound["md5ext"],
-                    "sampleCount": sound["sampleCount"], # TODO These are messed up, sound is high pitched
+                    "sampleCount": sound["sampleCount"],
                     "rate": sound["rate"],
-                    "format": "" # TODO Sound format
+                    "format": "format" in sound and sound["format"] or ""
                 }
                 self.filemap[0][sound["assetId"]] = [sound, sound2]
             sounds.append(sound2)
