@@ -35,7 +35,7 @@ specmap2["event_whengreaterthan"] = [
 specmap2_file = None
 try:
     specmap2_file = open("./specmap2.json", "w")
-    json.dump(specmap2, specmap2_file, indent=4, separators=(',', ': '))
+    json.dump(specmap2, specmap2_file)#, indent=4, separators=(',', ': '))
     print("Saved to './specmap2.json'.")
 except:
     print("Failed to save './specmap2.json'.")

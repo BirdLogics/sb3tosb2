@@ -9,7 +9,10 @@ import json, hashlib, zipfile
 logging.basicConfig(format="%(levelname)s: %(message)s", level=30)
 log = logging.getLogger()
 
-def main(sb3_path, sb2_path, specmap_path="./specmap2.json", overwrite=False, optimize=False, debug=False):
+# Maps sb3 opcodes and parameters to sb2 blockcodes
+specmap2 = {"motion_movesteps": ["forward:", [["input", "STEPS"]]], "motion_turnright": ["turnRight:", [["input", "DEGREES"]]], "motion_turnleft": ["turnLeft:", [["input", "DEGREES"]]], "motion_pointindirection": ["heading:", [["input", "DIRECTION"]]], "motion_pointtowards": ["pointTowards:", [["input", "TOWARDS"]]], "motion_gotoxy": ["gotoX:y:", [["input", "X"], ["input", "Y"]]], "motion_goto": ["gotoSpriteOrMouse:", [["input", "TO"]]], "motion_glidesecstoxy": ["glideSecs:toX:y:elapsed:from:", [["input", "SECS"], ["input", "X"], ["input", "Y"]]], "motion_changexby": ["changeXposBy:", [["input", "DX"]]], "motion_setx": ["xpos:", [["input", "X"]]], "motion_changeyby": ["changeYposBy:", [["input", "DY"]]], "motion_sety": ["ypos:", [["input", "Y"]]], "motion_ifonedgebounce": ["bounceOffEdge", []], "motion_setrotationstyle": ["setRotationStyle", [["field", "STYLE"]]], "motion_xposition": ["xpos", []], "motion_yposition": ["ypos", []], "motion_direction": ["heading", []], "motion_scroll_right": ["scrollRight", [["input", "DISTANCE"]]], "motion_scroll_up": ["scrollUp", [["input", "DISTANCE"]]], "motion_align_scene": ["scrollAlign", [["field", "ALIGNMENT"]]], "motion_xscroll": ["xScroll", []], "motion_yscroll": ["yScroll", []], "looks_sayforsecs": ["say:duration:elapsed:from:", [["input", "MESSAGE"], ["input", "SECS"]]], "looks_say": ["say:", [["input", "MESSAGE"]]], "looks_thinkforsecs": ["think:duration:elapsed:from:", [["input", "MESSAGE"], ["input", "SECS"]]], "looks_think": ["think:", [["input", "MESSAGE"]]], "looks_show": ["show", []], "looks_hide": ["hide", []], "looks_hideallsprites": ["hideAll", []], "looks_switchcostumeto": ["lookLike:", [["input", "COSTUME"]]], "looks_nextcostume": ["nextCostume", []], "looks_switchbackdropto": ["startScene", [["input", "BACKDROP"]]], "looks_changeeffectby": ["changeGraphicEffect:by:", [["field", "EFFECT"], ["input", "CHANGE"]]], "looks_seteffectto": ["setGraphicEffect:to:", [["field", "EFFECT"], ["input", "VALUE"]]], "looks_cleargraphiceffects": ["filterReset", []], "looks_changesizeby": ["changeSizeBy:", [["input", "CHANGE"]]], "looks_setsizeto": ["setSizeTo:", [["input", "SIZE"]]], "looks_changestretchby": ["changeStretchBy:", [["input", "CHANGE"]]], "looks_setstretchto": ["setStretchTo:", [["input", "STRETCH"]]], "looks_gotofrontback": ["comeToFront", []], "looks_goforwardbackwardlayers": ["goBackByLayers:", [["input", "NUM"]]], "looks_costumenumbername": ["costumeName", []], "looks_backdropnumbername": ["backgroundIndex", []], "looks_size": ["scale", []], "looks_switchbackdroptoandwait": ["startSceneAndWait", [["input", "BACKDROP"]]], "looks_nextbackdrop": ["nextScene", []], "sound_play": ["playSound:", [["input", "SOUND_MENU"]]], "sound_playuntildone": ["doPlaySoundAndWait", [["input", "SOUND_MENU"]]], "sound_stopallsounds": ["stopAllSounds", []], "music_playDrumForBeats": ["playDrum", [["input", "DRUM"], ["input", "BEATS"]]], "music_midiPlayDrumForBeats": ["drum:duration:elapsed:from:", [["input", "DRUM"], ["input", "BEATS"]]], "music_restForBeats": ["rest:elapsed:from:", [["input", "BEATS"]]], "music_playNoteForBeats": ["noteOn:duration:elapsed:from:", [["input", "NOTE"], ["input", "BEATS"]]], "music_setInstrument": ["instrument:", [["input", "INSTRUMENT"]]], "music_midiSetInstrument": ["midiInstrument:", [["input", "INSTRUMENT"]]], "sound_changevolumeby": ["changeVolumeBy:", [["input", "VOLUME"]]], "sound_setvolumeto": ["setVolumeTo:", [["input", "VOLUME"]]], "sound_volume": ["volume", []], "music_changeTempo": ["changeTempoBy:", [["input", "TEMPO"]]], "music_setTempo": ["setTempoTo:", [["input", "TEMPO"]]], "music_getTempo": ["tempo", []], "pen_clear": ["clearPenTrails", []], "pen_stamp": ["stampCostume", []], "pen_penDown": ["putPenDown", []], "pen_penUp": ["putPenUp", []], "pen_setPenColorToColor": ["penColor:", [["input", "COLOR"]]], "pen_changePenHueBy": ["changePenHueBy:", [["input", "HUE"]]], "pen_setPenHueToNumber": ["setPenHueTo:", [["input", "HUE"]]], "pen_changePenShadeBy": ["changePenShadeBy:", [["input", "SHADE"]]], "pen_setPenShadeToNumber": ["setPenShadeTo:", [["input", "SHADE"]]], "pen_changePenSizeBy": ["changePenSizeBy:", [["input", "SIZE"]]], "pen_setPenSizeTo": ["penSize:", [["input", "SIZE"]]], "videoSensing_videoOn": ["senseVideoMotion", [["input", "ATTRIBUTE"], ["input", "SUBJECT"]]], "event_whenflagclicked": ["whenGreenFlag", []], "event_whenkeypressed": ["whenKeyPressed", [["field", "KEY_OPTION"]]], "event_whenthisspriteclicked": ["whenClicked", []], "event_whenbackdropswitchesto": ["whenSceneStarts", [["field", "BACKDROP"]]], "event_whenbroadcastreceived": ["whenIReceive", [["field", "BROADCAST_OPTION"]]], "event_broadcast": ["broadcast:", [["input", "BROADCAST_INPUT"]]], "event_broadcastandwait": ["doBroadcastAndWait", [["input", "BROADCAST_INPUT"]]], "control_wait": ["wait:elapsed:from:", [["input", "DURATION"]]], "control_repeat": ["doRepeat", [["input", "TIMES"], ["input", "SUBSTACK"]]], "control_forever": ["doForever", [["input", "SUBSTACK"]]], "control_if": ["doIf", [["input", "CONDITION"], ["input", "SUBSTACK"]]], "control_if_else": ["doIfElse", [["input", "CONDITION"], ["input", "SUBSTACK"], ["input", "SUBSTACK2"]]], "control_wait_until": ["doWaitUntil", [["input", "CONDITION"]]], "control_repeat_until": ["doUntil", [["input", "CONDITION"], ["input", "SUBSTACK"]]], "control_while": ["doWhile", [["input", "CONDITION"], ["input", "SUBSTACK"]]], "control_for_each": ["doForLoop", [["field", "VARIABLE"], ["input", "VALUE"], ["input", "SUBSTACK"]]], "control_stop": ["stopScripts", [["field", "STOP_OPTION"]]], "control_start_as_clone": ["whenCloned", []], "control_create_clone_of": ["createCloneOf", [["input", "CLONE_OPTION"]]], "control_delete_this_clone": ["deleteClone", []], "control_get_counter": ["COUNT", []], "control_incr_counter": ["INCR_COUNT", []], "control_clear_counter": ["CLR_COUNT", []], "control_all_at_once": ["warpSpeed", [["input", "SUBSTACK"]]], "sensing_touchingobject": ["touching:", [["input", "TOUCHINGOBJECTMENU"]]], "sensing_touchingcolor": ["touchingColor:", [["input", "COLOR"]]], "sensing_coloristouchingcolor": ["color:sees:", [["input", "COLOR"], ["input", "COLOR2"]]], "sensing_distanceto": ["distanceTo:", [["input", "DISTANCETOMENU"]]], "sensing_askandwait": ["doAsk", [["input", "QUESTION"]]], "sensing_answer": ["answer", []], "sensing_keypressed": ["keyPressed:", [["input", "KEY_OPTION"]]], "sensing_mousedown": ["mousePressed", []], "sensing_mousex": ["mouseX", []], "sensing_mousey": ["mouseY", []], "sensing_loudness": ["soundLevel", []], "sensing_loud": ["isLoud", []], "videoSensing_videoToggle": ["setVideoState", [["input", "VIDEO_STATE"]]], "videoSensing_setVideoTransparency": ["setVideoTransparency", [["input", "TRANSPARENCY"]]], "sensing_timer": ["timer", []], "sensing_resettimer": ["timerReset", []], "sensing_of": ["getAttribute:of:", [["field", "PROPERTY"], ["input", "OBJECT"]]], "sensing_current": ["timeAndDate", [["field", "CURRENTMENU"]]], "sensing_dayssince2000": ["timestamp", []], "sensing_username": ["getUserName", []], "sensing_userid": ["getUserId", []], "operator_add": ["+", [["input", "NUM1"], ["input", "NUM2"]]], "operator_subtract": ["-", [["input", "NUM1"], ["input", "NUM2"]]], "operator_multiply": ["*", [["input", "NUM1"], ["input", "NUM2"]]], "operator_divide": ["/", [["input", "NUM1"], ["input", "NUM2"]]], "operator_random": ["randomFrom:to:", [["input", "FROM"], ["input", "TO"]]], "operator_lt": ["<", [["input", "OPERAND1"], ["input", "OPERAND2"]]], "operator_equals": ["=", [["input", "OPERAND1"], ["input", "OPERAND2"]]], "operator_gt": [">", [["input", "OPERAND1"], ["input", "OPERAND2"]]], "operator_and": ["&", [["input", "OPERAND1"], ["input", "OPERAND2"]]], "operator_or": ["|", [["input", "OPERAND1"], ["input", "OPERAND2"]]], "operator_not": ["not", [["input", "OPERAND"]]], "operator_join": ["concatenate:with:", [["input", "STRING1"], ["input", "STRING2"]]], "operator_letter_of": ["letter:of:", [["input", "LETTER"], ["input", "STRING"]]], "operator_length": ["stringLength:", [["input", "STRING"]]], "operator_mod": ["%", [["input", "NUM1"], ["input", "NUM2"]]], "operator_round": ["rounded", [["input", "NUM"]]], "operator_mathop": ["computeFunction:of:", [["field", "OPERATOR"], ["input", "NUM"]]], "data_variable": ["getVar:", [["field", "VARIABLE"]]], "data_setvariableto": ["setVar:to:", [["field", "VARIABLE"], ["input", "VALUE"]]], "data_changevariableby": ["changeVar:by:", [["field", "VARIABLE"], ["input", "VALUE"]]], "data_showvariable": ["showVariable:", [["field", "VARIABLE"]]], "data_hidevariable": ["hideVariable:", [["field", "VARIABLE"]]], "data_listcontents": ["contentsOfList:", [["field", "LIST"]]], "data_addtolist": ["append:toList:", [["input", "ITEM"], ["field", "LIST"]]], "data_deleteoflist": ["deleteLine:ofList:", [["input", "INDEX"], ["field", "LIST"]]], "data_insertatlist": ["insert:at:ofList:", [["input", "ITEM"], ["input", "INDEX"], ["field", "LIST"]]], "data_replaceitemoflist": ["setLine:ofList:to:", [["input", "INDEX"], ["field", "LIST"], ["input", "ITEM"]]], "data_itemoflist": ["getLine:ofList:", [["input", "INDEX"], ["field", "LIST"]]], "data_lengthoflist": ["lineCountOfList:", [["field", "LIST"]]], "data_listcontainsitem": ["list:contains:", [["field", "LIST"], ["input", "ITEM"]]], "data_showlist": ["showList:", [["field", "LIST"]]], "data_hidelist": ["hideList:", [["field", "LIST"]]], "procedures_definition": ["procDef", []], "argument_reporter_string_number": ["getParam", [["field", "VALUE"]]], "procedures_call": ["call", []], "wedo2_motorOnFor": ["LEGO WeDo 2.0.motorOnFor", [["input", "MOTOR_ID"], ["input", "DURATION"]]], "wedo2_motorOn": ["LEGO WeDo 2.0.motorOn", [["input", "MOTOR_ID"]]], "wedo2_motorOff": ["LEGO WeDo 2.0.motorOff", [["input", "MOTOR_ID"]]], "wedo2_startMotorPower": ["LEGO WeDo 2.0.startMotorPower", [["input", "MOTOR_ID"], ["input", "POWER"]]], "wedo2_setMotorDirection": ["LEGO WeDo 2.0.setMotorDirection", [["input", "MOTOR_ID"], ["input", "MOTOR_DIRECTION"]]], "wedo2_setLightHue": ["LEGO WeDo 2.0.setLED", [["input", "HUE"]]], "wedo2_playNoteFor": ["LEGO WeDo 2.0.playNote", [["input", "NOTE"], ["input", "DURATION"]]], "wedo2_whenDistance": ["LEGO WeDo 2.0.whenDistance", [["input", "OP"], ["input", "REFERENCE"]]], "wedo2_whenTilted": ["LEGO WeDo 2.0.whenTilted", [["input", "TILT_DIRECTION_ANY"]]], "wedo2_getDistance": ["LEGO WeDo 2.0.getDistance", []], "wedo2_isTilted": ["LEGO WeDo 2.0.isTilted", [["input", "TILT_DIRECTION_ANY"]]], "wedo2_getTiltAngle": ["LEGO WeDo 2.0.getTilt", [["input", "TILT_DIRECTION"]]], "event_whengreaterthan": ["whenSensorGreaterThan", [["field", "WHENGREATERTHANMENU"], ["input", "VALUE"]]]}
+
+def main(sb3_path, sb2_path, overwrite=False, optimize=False, debug=False):
     """Automatically converts a sb3 file and saves it in sb2 format.
     
     sb3_path -- the path to the .sb3 file
@@ -19,240 +22,239 @@ def main(sb3_path, sb2_path, specmap_path="./specmap2.json", overwrite=False, op
     debug -- save a debug to project.json if overwrite is enabled
     optimize -- try to convert strings to numbers"""
 
-    # Load the sb3 to sb2 specmap
-    specmap2 = loadSpecmap(specmap_path)
+    # Open files to read and write from
+    sbf = SbFiles(sb3_path, sb2_path, overwrite, debug)
 
-    # Load the sb3 json
-    sb3 = loadProject(sb3_path)
+    # Verify they loaded
+    if sbf.sb3_file and sbf.sb2_file:
+        # Load the sb3 json
+        sb3 = sbf.getSb3()
 
-    # Make sure everything loaded correctly
-    if sb3 and specmap2:
-        # Get the convertor object
-        project = Converter(sb3, specmap2)
+        # Make sure everything loaded correctly
+        if sb3:
+            # Get the convertor object
+            project = Converter(sb3, specmap2)
 
-        # Set optimizations
-        project.numberOpt = optimize
-        project.spaceOpt = optimize
+            # Set optimizations
+            project.numberOpt = optimize
+            project.spaceOpt = optimize
 
-        # Convert the project
-        sb2, filemap = project.convert()
+            # Convert the project
+            sb2, filemap = project.convert()
 
-        # Save the project
-        saveProject(sb2, filemap, sb2_path, sb3_path, overwrite, debug)
+            # Save the project
+            sbf.saveSb2(sb2, filemap)
+
+            # Close all the files
+            sbf.close()
+        else:
+            log.critical("Failed to load sb3 project json.")
+            sbf.close()
     else:
         log.critical("Failed to load necessary files.")
+        sbf.close()
 
-def loadSpecmap(spec_path="./specmap2.json"):
-    """Loads the sb3 to sb2 specmap json and parse it."""
-    specmap2_file = None
-    try:
-        specmap2_file = open(spec_path, "r")
-        specmap2 = json.load(specmap2_file)
-        return specmap2
-    except FileNotFoundError:
-        log.warning("Specmap file '%s' not found." % spec_path)
-        return False
-    except json.decoder.JSONDecodeError:
-        log.warning("Ffile '%s' is not a valid json file." % spec_path)
-        return False
-    except:
-        log.error("Unkown error opening '%s'." % spec_path, exc_info=True)
-    finally:
-        if specmap2_file: specmap2_file.close()
+class SbFiles:
+    supportedRates = [44100, 22050, 11025, 5512] # Sound rates supported by flash
 
-def loadProject(sb3_path):
-    """Load a sb3 project and return the parsed project json."""
-    sb3_file = None
-    try:
-        sb3_file = zipfile.ZipFile(sb3_path, "r")
-        sb3_json = sb3_file.read("project.json")
-        sb3 = json.loads(sb3_json)
-        return sb3
-    except FileNotFoundError:
-        log.warning("Project file '%s' not found." % sb3_path)
-        return False
-    except zipfile.BadZipFile:
-        log.warning("File '%s' is not a valid zip file.")
-        return False
-    except json.decoder.JSONDecodeError:
-        log.warning("File '%s/project.json' is not a valid json file." % sb3_path)
-        return False
-    except:
-        log.error("Unkown error opening '%s'." % sb3_path, exc_info=True)
-    finally:
-        if sb3_file: sb3_file.close()
-    return False
+    sb3_file = None # Holds the sb3 file
+    sb2_file = None # Holds the sb2 file
 
-def saveProject(sb2, filemap, sb2_path, sb3_path, overwrite=False, debug=False):
-    """Create and save a sb2 zip from the converted project and sb3 zip."""
-    sb2_file = None
-    sb2_jfile = None
-    sb3_file = None
+    overwrite = False # Whether files may be overwritten
+    debug = False # Whether to save a debug json
 
-    # Save the results
-    try:
-        # Open the .sb3 to get its assets
-        sb3_file = zipfile.ZipFile(sb3_path, "r")
+    def __init__(self, sb3_path, sb2_path, overwrite=False, debug=False):
+        """Opens the sb3 and sb2 files in preperation of use"""
+        self.sb3_path = sb3_path
+        self.sb2_path = sb2_path
 
-        if overwrite:
-            # Open and overwrite existing files
-            sb2_file = zipfile.ZipFile(sb2_path, "w")
-        else:
-            # Will throw an error if a file already exists
-            sb2_file = zipfile.ZipFile(sb2_path, "x")
-
-        # Process all sounds
-        for s in filemap[0]:
-            # Get the sb3 asset
-            asset = filemap[0][s]
-            name = asset[0]["name"]
-            format = asset[0]["dataFormat"]
-            md5ext = asset[0]["md5ext"]
-            md5 = asset[0]["assetId"]
-
-            # Get the sb2 asset
-            data = sb3_file.read(md5ext)
-            assetId = asset[1]["soundID"]
-
-            if format == "wav":
-                # 
-                try:
-                    data = processWave(data, asset[1])
-                    md5 = hashlib.md5(data).hexdigest()
-                except wave.Error:
-                    log.warning("Failed to convert wav sound '%s'." %asset[0]["name"], exc_info=True)
-                except:
-                    log.error("Unkown error converting sound '%s'." %asset[0]["assetId"], exc_info=True)
-            elif format == "mp3":
-                log.warning("Sound conversion for mp3 '%s' not supported." %asset[0]["name"])
-                continue
+        try:
+            self.sb3_file = zipfile.ZipFile(sb3_path, "r")
+            if overwrite:
+                self.sb2_file = zipfile.ZipFile(sb2_path, "w")
             else:
-                log.warning("Unrecognized sound format '%s'." %format)
+                self.sb2_file = zipfile.ZipFile(sb2_path, "x")
+        except FileExistsError:
+            log.warning("File '%s' already exists. Delete or rename it and try again." % sb2_path)
+        except FileNotFoundError:
+            log.warning("File '%s' not found." % sb3_path)
+        except zipfile.BadZipFile:
+            log.warning("File '%s' is not a valid zip file." % sb3_path)
+        except:
+            log.error("Unkown error opening file '%s' or '%s'." % (sb2_path, sb3_path), exc_info=True)
 
-            # Save the sb2 asset
-            asset[1]["md5"] = md5 + "." + format
-            fileName2 = str(assetId) + "." + format
-            sb2_file.writestr(fileName2, data)
+        self.overwrite = overwrite
+        self.debug = debug
 
-        for c in filemap[1]:
-            # Get the sb3 asset
-            asset = filemap[1][c]
-            assetId = asset[0]["assetId"]
-            name = asset[0]["name"]
-            format = asset[0]["dataFormat"]
-            md5ext = asset[0]["md5ext"]
+    def getSb3(self):
+        """Return the parsed project json from the sb3 file."""
+        try:
+            sb3_json = self.sb3_file.read("project.json")
+            sb3 = json.loads(sb3_json)
+            return sb3
+        except json.decoder.JSONDecodeError:
+            log.warning("File '%s/project.json' is not a valid json file." % sb3_path)
+            return False
+        except:
+            log.error("Unkown error opening '%s'." % sb3_path, exc_info=True)
+        return False
 
-            # Load the sb3 asset
-            assetData = sb3_file.read(md5ext)
-                
+    def saveSb2(self, sb2, filemap):
+        """Create and save a sb2 zip from the converted project and sb3 zip."""
+        sb2_jfile = None
 
-            # Check the format
-            if format == "png":
-                pass
-            elif format == "svg":
-                pass # TODO svg repair
-            else:
-                log.warning("Unrecognized file format '%s'" % format)
+        # Save the results
+        try:
+            # Process all sounds
+            for s in filemap[0]:
+                # Get the sb3 asset
+                asset = filemap[0][s]
+                name = asset[0]["name"]
+                format = asset[0]["dataFormat"]
+                md5ext = asset[0]["md5ext"]
+                md5 = asset[0]["assetId"]
 
-            # Check the file md5
-            md5 = hashlib.md5(assetData).hexdigest()
-            if md5 != assetId:
-                if assetId == asset[0]["assetId"]:
-                    log.warning("The md5 for %s '%s' is invalid.", format, name)
+                # Get the sb2 asset
+                data = self.sb3_file.read(md5ext)
+                assetId = asset[1]["soundID"]
+
+                if format == "wav":
+                    # 
+                    try:
+                        data = self.processWave(data, asset[1])
+                        md5 = hashlib.md5(data).hexdigest()
+                    except wave.Error:
+                        log.warning("Failed to convert wav sound '%s'." %asset[0]["name"], exc_info=True)
+                    except:
+                        log.error("Unkown error converting sound '%s'." %asset[0]["assetId"], exc_info=True)
+                elif format == "mp3":
+                    log.warning("Sound conversion for mp3 '%s' not supported." %asset[0]["name"])
+                    continue
                 else:
-                    log.error("The md5 for asset '%s' is invalid.", group[id][0]["assetId"])
+                    log.warning("Unrecognized sound format '%s'." %format)
+
+                # Save the sb2 asset
+                asset[1]["md5"] = md5 + "." + format
+                fileName2 = str(assetId) + "." + format
+                self.sb2_file.writestr(fileName2, data)
             
-            # Save sb2 assetId info
-            assetId2 = asset[1]["baseLayerID"]
-            asset[1]["baseLayerMD5"] = assetId + "." + format
+            # Process all costumes
+            for c in filemap[1]:
+                # Get the sb3 asset
+                asset = filemap[1][c]
+                assetId = asset[0]["assetId"]
+                name = asset[0]["name"]
+                format = asset[0]["dataFormat"]
+                md5ext = asset[0]["md5ext"]
 
-            # Save the sb2 asset
-            fileName2 = str(assetId2) + "." + format
-            sb2_file.writestr(fileName2, assetData)
+                # Load the sb3 asset
+                assetData = self.sb3_file.read(md5ext)
+                    
 
-        # Get the sb2 json string
-        sb2_json = json.dumps(sb2, indent=4, separators=(',', ': '))
+                # Check the format
+                if format == "png":
+                    pass
+                elif format == "svg":
+                    pass # TODO svg repair
+                else:
+                    log.warning("Unrecognized file format '%s'" % format)
 
-        if debug and overwrite:
-            # Save a copy of the json
-            sb2_jfile = open("project.json", "w")
-            sb2_jfile.write(sb2_json)
-            print("Saved debug to 'project.json'.")
+                # Check the file md5
+                md5 = hashlib.md5(assetData).hexdigest()
+                if md5 != assetId:
+                    if assetId == asset[0]["assetId"]:
+                        log.warning("The md5 for %s '%s' is invalid.", format, name)
+                    else:
+                        log.error("The md5 for asset '%s' is invalid.", group[id][0]["assetId"])
+                
+                # Save sb2 assetId info
+                assetId2 = asset[1]["baseLayerID"]
+                asset[1]["baseLayerMD5"] = assetId + "." + format
+
+                # Save the sb2 asset
+                fileName2 = str(assetId2) + "." + format
+                self.sb2_file.writestr(fileName2, assetData)
+
+            # Get the sb2 json string
+            sb2_json = json.dumps(sb2, indent=4, separators=(',', ': '))
+
+            if self.debug and self.overwrite:
+                # Save a copy of the json
+                sb2_jfile = open("project.json", "w")
+                sb2_jfile.write(sb2_json)
+                print("Saved debug to 'project.json'.")
+            
+            # Save the sb2 json
+            self.sb2_file.writestr("project.json", sb2_json)
+
+            print("Saved to '%s'" % sb2_path)
+            return True
+        except:
+            log.error("Unkown error saving to '%s'." %sb2_path, exc_info=True)
+            return False
+        finally:
+            if sb2_jfile: sb2_jfile.close()
+            elif debug: print("Did not save debug json to 'project.json'.")
         
-        # Save the sb2 json
-        sb2_file.writestr("project.json", sb2_json)
+    def close(self):
+        """Close all open files"""
+        if self.sb2_file: self.sb2_file.close()
+        if self.sb3_file: self.sb3_file.close()
 
-        print("Saved to '%s'" % sb2_path)
-        return True
-    except FileExistsError:
-        log.warning("File '%s' already exists. Delete or rename it and try again." % sb2_path)
-        return False
-    except FileNotFoundError:
-        log.warning("File '%s' not found." % sb3_path)
-        return False
-    except:
-        log.error("Unkown error saving to '%s' or reading from '%s'." % (sb2_path, sb3_path), exc_info=True)
-        return False
-    finally:
-        if sb2_file: sb2_file.close()
-        if sb2_jfile: sb2_jfile.close()
-        elif debug: print("Did not save debug json to 'project.json'.")
-        if sb3_file: sb3_file.close()
+    # TODO Maybe just get actual sound rate?
+    def processWave(self, data, asset):
+        if asset["format"] == "adpcm":
+            log.warning("Sound rate verification for adpcm wav '%s' not supported." % asset["soundName"])
+            return data
 
-supportedRates = [44100, 22050, 11025, 5512] # Sound rates supported by flash TODO Maybe just get actual sound rate?
-def processWave(data, asset):
-    if asset["format"] == "adpcm":
-        log.warning("Sound rate verification for adpcm wav '%s' not supported." % asset["soundName"])
-        return data
+        # Read the sound with wave
+        data = io.BytesIO(data)
+        wav = wave.open(data, "rb")
 
-    # Read the sound with wave
-    data = io.BytesIO(data)
-    wav = wave.open(data, "rb")
+        # Get info about the sound
+        channels = wav.getnchannels()
+        width = wav.getsampwidth()
+        rate = wav.getframerate() # TODO These don't match json?
+        sampleCount = wav.getnframes()
 
-    # Get info about the sound
-    channels = wav.getnchannels()
-    width = wav.getsampwidth()
-    rate = wav.getframerate() # TODO These don't match json?
-    sampleCount = wav.getnframes()
+        # Resample and monofy the sound
+        changed = False
+        sound = wav.readframes(sampleCount)
+        if channels > 1:
+            log.debug("Monofying sound '%s'" %asset["md5"])
+            sound = audioop.tomono(sound, width, 1, 1)
+            changed = True
+        if not rate in self.supportedRates:
+            log.debug("Resamping sound '%s'" %asset["md5"])
+            # Find the highest supported rate TODO Is this the best way?
+            newRate = self.supportedRates[-1]
+            for r in self.supportedRates:
+                if rate > r:
+                    newRate = r
+                    break
 
-    # Resample and monofy the sound
-    changed = False
-    sound = wav.readframes(sampleCount)
-    if channels > 1:
-        log.debug("Monofying sound '%s'" %asset["md5"])
-        sound = audioop.tomono(sound, width, 1, 1)
-        changed = True
-    if not rate in supportedRates:
-        log.debug("Resamping sound '%s'" %asset["md5"])
-        # Find the highest supported rate TODO Is this the best way?
-        newRate = supportedRates[-1]
-        for r in supportedRates:
-            if rate > r:
-                newRate = r
-                break
+            # Resample the sound
+            sound = audioop.ratecv(sound, width, 1, rate, newRate, None)[0]
+            rate = newRate
+            changed = True
+        
+        if changed:
+            # Get the wav data
+            data = io.BytesIO()
+            wav = wave.open(data, "wb")
+            wav.setnchannels(1)
+            wav.setframerate(rate)
+            wav.setsampwidth(width)
+            wav.writeframes(sound)
 
-        # Resample the sound
-        sound = audioop.ratecv(sound, width, 1, rate, newRate, None)[0]
-        rate = newRate
-        changed = True
-    
-    if changed:
-        # Get the wav data
-        data = io.BytesIO()
-        wav = wave.open(data, "wb")
-        wav.setnchannels(1)
-        wav.setframerate(rate)
-        wav.setsampwidth(width)
-        wav.writeframes(sound)
+        # Save framerate and sampleCount
+        data.seek(0)
+        wav = wave.open(data, "rb")
+        asset["rate"] = wav.getframerate()
+        asset["sampleCount"] = wav.getnframes()
 
-    # Save framerate and sampleCount
-    data.seek(0)
-    wav = wave.open(data, "rb")
-    asset["rate"] = wav.getframerate()
-    asset["sampleCount"] = wav.getnframes()
-
-    data.seek(0)
-    return data.read()
+        data.seek(0)
+        return data.read()
 
 class Converter:
     """Class for converting a sb3 project json to the sb2 format"""
@@ -851,8 +853,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("sb3_path", help="path to the .sb3 projet, defaults to './project.sb3'", nargs="?", default="./project.sb3")
     parser.add_argument("sb2_path", help="path to the .sb2 projet, default gotten from sb3_path", nargs="?", default=None)
-    parser.add_argument("specmap", help="path to the specmap json, defaults to './specmap2.json'", nargs="?", default="./specmap2.json")
-    parser.add_argument("-s", "--specmap", help="alternate to specmap_path")
     parser.add_argument("-w", "--overwrite", help="overwrite existing files at the sb2 destination", action="store_true")
     parser.add_argument("-d", "--debug", help="save a debug json to './project.json' if overwrite is enabled", action="store_true")
     parser.add_argument("-v", "--verbosity", help="controls printed verbosity", action="count", default=0)
@@ -867,7 +867,6 @@ if __name__ == "__main__":
         sb2_path = sb3_path.split(".")
         sb2_path[-1] = "sb2"
         sb2_path = '.'.join(sb2_path)
-    specmap_path = args.specmap
     overwrite = args.overwrite
     debug = args.debug
     verbosity = args.verbosity
@@ -887,4 +886,4 @@ if __name__ == "__main__":
     log.level = verbosity
 
     # Run the converter with these arguments
-    main(sb3_path, sb2_path, specmap_path, overwrite, optimize, debug)
+    main(sb3_path, sb2_path, overwrite, optimize, debug)
