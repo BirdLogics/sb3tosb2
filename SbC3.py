@@ -320,12 +320,17 @@ class Converter:
                 self.monitors[monitor["id"]] = monitor2
 
         # Parse each target(sprite)
+        sprites = {}
         for target in self.sb3["targets"]:
             object = self.parseTarget(target)
             if object["objName"] == "Stage":
                 self.sb2 = object
             else:
-                self.sprites.append(object)
+                sprites[target["layerOrder"]] = object
+        
+        # Order the sprites correctly
+        for l in sorted(sprites):
+            self.sprites.append(sprites[l])
 
         # Add the sprites and monitors to the stage
         self.sb2["children"] = self.sprites + list(self.monitors.values())
@@ -512,7 +517,7 @@ class Converter:
             sprite["spriteInfo"] = {} # Always blank
         else:
             sprite["penLayerMD5"] = "" # TODO Is there a pen MD5 in sb3?
-            sprite["penLayerID"] = target["layerOrder"]
+            sprite["penLayerID"] = ""
             sprite["tempoBPM"] = target["tempo"]
             sprite["videoAlpha"] = round((100 - target["videoTransparency"]) / 100, 2)
         
