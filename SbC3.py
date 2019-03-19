@@ -27,31 +27,59 @@ def main(sb3_path, sb2_path, overwrite=False, optimize=False, debug=False):
 
     # Verify they loaded
     if sbf.sb3_file and sbf.sb2_file:
-        # Load the sb3 json
-        sb3 = sbf.getSb3()
+        if sbf.json_path == "project.json":
+            # Load the sb3 project json
+            sb3 = sbf.getSb3()
 
-        # Make sure everything loaded correctly
-        if sb3:
-            # Get the convertor object
-            project = Converter(sb3, specmap2)
+            # Make sure everything loaded correctly
+            if sb3:
+                # Get the convertor object
+                project = Converter(sb3, specmap2)
 
-            # Set optimizations
-            project.numberOpt = optimize
-            project.spaceOpt = optimize
+                # Set optimizations
+                project.numberOpt = optimize
+                project.spaceOpt = optimize
 
-            # Convert the project
-            sb2, filemap = project.convert()
+                # Convert the project
+                sb2, filemap = project.convert()
 
-            # Save the project
-            sbf.saveSb2(sb2, filemap)
+                # Save the project
+                sbf.saveSb2(sb2, filemap)
 
-            # Close all the files
-            sbf.close()
+                # Close all the files
+                sbf.close()
+            else:
+                log.critical("Failed to load sb3 project json.")
+                sbf.close()
+        elif sbf.json_path == "sprite.json":
+            # Load the sb3 target json
+            sb3 = sbf.getSb3()
+
+            if sb3:
+                # Get the convertor object
+                sprite = Converter(None, specmap2)
+
+                # Set optimizations
+                sprite.numberOpt = optimize
+                sprite.spaceOpt = optimize
+
+                # Convert the sprite
+                sb2 = sprite.parseTarget(sb3)
+                filemap = sprite.filemap
+
+                # Save the sprite
+                sbf.saveSb2(sb2, filemap)
+
+                # Close all files
+                sbf.close()
+            else:
+                log.critical("Failed to load sb3 sprite json.")
+                sbf.close()
         else:
-            log.critical("Failed to load sb3 project json.")
+            log.error("Invalid json path.")
             sbf.close()
     else:
-        log.critical("Failed to load necessary files.")
+        log.critical("Failed to load sb3 and sb2 files.")
         sbf.close()
 
 class SbFiles:
@@ -60,20 +88,55 @@ class SbFiles:
     sb3_file = None # Holds the sb3 file
     sb2_file = None # Holds the sb2 file
 
+    sb3_path = "" # Holds the path to the sb3 file
+    sb2_path = "" # Holds the path to the sb2 file
+    json_path = "project.json" # Holds the path to the json
+
     overwrite = False # Whether files may be overwritten
     debug = False # Whether to save a debug json
 
-    def __init__(self, sb3_path, sb2_path, overwrite=False, debug=False):
+    def __init__(self, sb3_path, sb2_path="", overwrite=False, debug=False):
         """Opens the sb3 and sb2 files in preperation of use"""
         self.sb3_path = sb3_path
         self.sb2_path = sb2_path
 
         try:
             self.sb3_file = zipfile.ZipFile(sb3_path, "r")
-            if overwrite:
-                self.sb2_file = zipfile.ZipFile(sb2_path, "w")
+
+            # Figure out if the sb3 is a project or sprite
+            ext = sb3_path.split(".")[-1]
+            files = self.sb3_file.namelist()
+            if ext == "sb3":
+                self.json_path = "project.json"
+                if not "project.json" in files and "sprite.json" in files:
+                    self.json_path = "sprite.json"
+                    log.warning("File '%s' has a sb3 extension but appears to be a sprite." % sb3_path)
+            elif ext == "sprite3":
+                self.json_path = "sprite.json"
+                if not "sprite.json" in files and "project.json" in files:
+                    self.json_path = "project.json"
+                    log.warning("File '%s' has a sprite3 extension but appears to be a project." % sb3_path)
             else:
-                self.sb2_file = zipfile.ZipFile(sb2_path, "x")
+                self.json_path = "project.json"
+                if not "project.json" in files and "sprite.json" in files:
+                    self.json_path = "sprite.json"
+
+            # Get a save path if not set
+            if not sb2_path:
+                if self.json_path == "project.json":
+                    sb2_path = sb3_path.split(".")
+                    sb2_path[-1] = "sb2"
+                    self.sb2_path = '.'.join(sb2_path)
+                else:
+                    sb2_path = sb3_path.split(".")
+                    sb2_path[-1] = "sprite2"
+                    self.sb2_path = '.'.join(sb2_path)
+
+            # Create the save file
+            if overwrite:
+                self.sb2_file = zipfile.ZipFile(self.sb2_path, "w")
+            else:
+                self.sb2_file = zipfile.ZipFile(self.sb2_path, "x")
         except FileExistsError:
             log.warning("File '%s' already exists. Delete or rename it and try again." % sb2_path)
         except FileNotFoundError:
@@ -89,14 +152,17 @@ class SbFiles:
     def getSb3(self):
         """Return the parsed project json from the sb3 file."""
         try:
-            sb3_json = self.sb3_file.read("project.json")
+            sb3_json = self.sb3_file.read(self.json_path)
             sb3 = json.loads(sb3_json)
             return sb3
+        except KeyError:
+            log.warning("Failed to find json '%s' in '%s'.", self.json_path, self.sb3_path)
+            return False
         except json.decoder.JSONDecodeError:
-            log.warning("File '%s/project.json' is not a valid json file." % sb3_path)
+            log.warning("File '%s/%s' is not a valid json file.", self.sb3_path, self.json_path)
             return False
         except:
-            log.error("Unkown error opening '%s'." % sb3_path, exc_info=True)
+            log.error("Unkown error reading '%s'.", self.sb3_path, exc_info=True)
         return False
 
     def saveSb2(self, sb2, filemap):
@@ -107,6 +173,8 @@ class SbFiles:
         try:
             # Process all sounds
             for s in filemap[0]:
+                log.debug("Processing sound '%s'.", s)
+
                 # Get the sb3 asset
                 asset = filemap[0][s]
                 name = asset[0]["name"]
@@ -140,6 +208,8 @@ class SbFiles:
             
             # Process all costumes
             for c in filemap[1]:
+                log.debug("Processing costume '%s'.", c)
+
                 # Get the sb3 asset
                 asset = filemap[1][c]
                 assetId = asset[0]["assetId"]
@@ -180,26 +250,26 @@ class SbFiles:
 
             if self.debug and self.overwrite:
                 # Save a copy of the json
-                sb2_jfile = open("project.json", "w")
+                sb2_jfile = open(self.json_path, "w")
                 sb2_jfile.write(sb2_json)
-                print("Saved debug to 'project.json'.")
+                print("Saved debug to '%s'." % self.json_path)
             
             # Save the sb2 json
-            self.sb2_file.writestr("project.json", sb2_json)
+            self.sb2_file.writestr(self.json_path, sb2_json)
 
-            print("Saved to '%s'" % sb2_path)
+            print("Saved to '%s'" % self.sb2_path)
             return True
         except:
-            log.error("Unkown error saving to '%s'." %sb2_path, exc_info=True)
+            log.error("Unkown error saving to '%s'.", sb2_path, exc_info=True)
             return False
         finally:
             if sb2_jfile: sb2_jfile.close()
-            elif debug: print("Did not save debug json to 'project.json'.")
-        
+            elif debug: print("Did not save debug json to '%s'." % self.json_path)
+
     def close(self):
         """Close all open files"""
-        if self.sb2_file: self.sb2_file.close()
         if self.sb3_file: self.sb3_file.close()
+        if self.sb2_file: self.sb2_file.close()
 
     # TODO Maybe just get actual sound rate?
     def processWave(self, data, asset):
@@ -851,22 +921,17 @@ class Converter:
 if __name__ == "__main__":
     # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("sb3_path", help="path to the .sb3 projet, defaults to './project.sb3'", nargs="?", default="./project.sb3")
-    parser.add_argument("sb2_path", help="path to the .sb2 projet, default gotten from sb3_path", nargs="?", default=None)
+    parser.add_argument("sb3_path", help="path to the .sb3 or .sprite3 project/sprite, defaults to './project.sb3'", nargs="?", default="./project.sb3")
+    parser.add_argument("sb2_path", help="path to the .sb2 or .sprite2 project/sprite, default generated from sb3_path", nargs="?", default="")
     parser.add_argument("-w", "--overwrite", help="overwrite existing files at the sb2 destination", action="store_true")
-    parser.add_argument("-d", "--debug", help="save a debug json to './project.json' if overwrite is enabled", action="store_true")
+    parser.add_argument("-d", "--debug", help="save a debug json to './project.json' or './sprite.json' when overwrite is enabled", action="store_true")
     parser.add_argument("-v", "--verbosity", help="controls printed verbosity", action="count", default=0)
     parser.add_argument("-o", "--optimize", help="try to convert all strings to numbers", action="store_true")
     args = parser.parse_args()
     
     # A bit more parsing
     sb3_path = args.sb3_path
-    if args.sb2_path:
-        sb2_path = args.sb2_path
-    else:
-        sb2_path = sb3_path.split(".")
-        sb2_path[-1] = "sb2"
-        sb2_path = '.'.join(sb2_path)
+    sb2_path = args.sb2_path
     overwrite = args.overwrite
     debug = args.debug
     verbosity = args.verbosity
