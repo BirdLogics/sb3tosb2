@@ -2,7 +2,7 @@ Key for input types
 
 [1, Value] Wrapper for other values
 [2, BlockId] Substack, condition
-[3, Value1, Value2] Input /w blocks
+[3, Value1, Value2] Input covered /w blocks
 
 [4, Float] Most numbers
 [5, UFloat] Time wait
