@@ -395,7 +395,7 @@ class Converter:
         sprites = {}
         for target in self.sb3["targets"]:
             object = self.parseTarget(target)
-            if "isStage" in object and object["isStage"]:
+            if "isStage" in target and target["isStage"]:
                 self.sb2 = object
             else:
                 sprites[target["layerOrder"]] = object
@@ -561,7 +561,7 @@ class Converter:
                 costume2 = {
                     "costumeName": costume["name"],
                     "baseLayerID": len(self.filemap[1]),
-                    "BaseLayerMD5": costume["md5ext"],
+                    "baseLayerMD5": costume["md5ext"],
                 }
                 if "bitmapResolution" in costume:
                     costume2["bitmapResolution"] = costume["bitmapResolution"]
@@ -575,7 +575,7 @@ class Converter:
         # Get other attributes
         sprite["currentCostumeIndex"] = target["currentCostume"]
         
-        if not ("isStage" in target or target["isStage"]):
+        if not ("isStage" in target and target["isStage"]):
             sprite["scratchX"] = target["x"]
             sprite["scratchY"] = target["y"]
             sprite["scale"] = round(target["size"] / 100)
@@ -591,7 +591,7 @@ class Converter:
         else:
             sprite["penLayerMD5"] = "" # TODO Is there a pen MD5 in sb3?
             sprite["penLayerID"] = ""
-            sprite["tempoBPM"] = "tempo" in target and target["tempo"] or 30 # TODO default
+            sprite["tempoBPM"] = "tempo" in target and int(target["tempo"]) or 30 # TODO default
             sprite["videoAlpha"] = "videoTransparency" in target and round((100 - target["videoTransparency"]) / 100, 2) or 0 # TODO default
         
         log.info("Parsed sprite '%s'" %target["name"])
