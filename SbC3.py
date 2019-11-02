@@ -264,7 +264,7 @@ class SbFiles:
             return False
         finally:
             if sb2_jfile: sb2_jfile.close()
-            elif debug: print("Did not save debug json to '%s'." % self.json_path)
+            elif self.debug: print("Did not save debug json to '%s'." % self.json_path)
 
     def close(self):
         """Close all open files"""
@@ -395,7 +395,7 @@ class Converter:
         sprites = {}
         for target in self.sb3["targets"]:
             object = self.parseTarget(target)
-            if object["objName"] == "Stage":
+            if "isStage" in object and object["isStage"]:
                 self.sb2 = object
             else:
                 sprites[target["layerOrder"]] = object
@@ -562,11 +562,12 @@ class Converter:
                     "costumeName": costume["name"],
                     "baseLayerID": len(self.filemap[1]),
                     "BaseLayerMD5": costume["md5ext"],
-                    "rotationCenterX": costume["rotationCenterX"],
-                    "rotationCenterY": costume["rotationCenterY"]
                 }
                 if "bitmapResolution" in costume:
                     costume2["bitmapResolution"] = costume["bitmapResolution"]
+                costume2["rotationCenterX"] = costume["rotationCenterX"]
+                costume2["rotationCenterY"] = costume["rotationCenterY"]
+                
                 self.filemap[1][costume["assetId"]] = [costume, costume2]
             costumes.append(costume2)
         sprite["costumes"] = costumes
@@ -574,7 +575,7 @@ class Converter:
         # Get other attributes
         sprite["currentCostumeIndex"] = target["currentCostume"]
         
-        if not target["isStage"]:
+        if not ("isStage" in target or target["isStage"]):
             sprite["scratchX"] = target["x"]
             sprite["scratchY"] = target["y"]
             sprite["scale"] = round(target["size"] / 100)
@@ -590,8 +591,8 @@ class Converter:
         else:
             sprite["penLayerMD5"] = "" # TODO Is there a pen MD5 in sb3?
             sprite["penLayerID"] = ""
-            sprite["tempoBPM"] = target["tempo"]
-            sprite["videoAlpha"] = round((100 - target["videoTransparency"]) / 100, 2)
+            sprite["tempoBPM"] = "tempo" in target and target["tempo"] or 30 # TODO default
+            sprite["videoAlpha"] = "videoTransparency" in target and round((100 - target["videoTransparency"]) / 100, 2) or 0 # TODO default
         
         log.info("Parsed sprite '%s'" %target["name"])
 
@@ -744,7 +745,7 @@ class Converter:
                                 # Get the sb3 input argument
                                 value = self.parseInput(block3, arg[1], blocks)
                             except:
-                                log.error("Argument parsing problem.", exc_info=True)
+                                log.error("Unkown error parsing arguments.", exc_info=True)
                                 value = block3["inputs"][arg[1]]
                         else:
                             value = None # Empty substacks not always stored?
@@ -895,7 +896,7 @@ class Converter:
             color = self.monitorColors[monitor["opcode"].split("_")[0]]
         else:
             log.warning("Unkown monitor '%s'" % monitor["opcode"])
-            return None # TODO Here
+            return None
         
         if monitor["spriteName"]:
             label = monitor["spriteName"] + ": " + param
